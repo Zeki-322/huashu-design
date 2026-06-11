@@ -23,7 +23,7 @@
  * Usage:
  *   NODE_PATH=$(npm root -g) node render-video-seek.js <html-file> \
  *     [--duration=30] [--fps=60] [--width=1920] [--height=1080] \
- *     [--concurrency=4] [--settle=2] [--keep-chrome]
+ *     [--concurrency=4] [--settle=2] [--out=<file.mp4>] [--keep-chrome]
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
  */
@@ -61,7 +61,7 @@ const HTML_ABS = path.resolve(HTML_FILE);
 const BASENAME = path.basename(HTML_FILE, path.extname(HTML_FILE));
 const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
-const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
+const MP4_OUT  = path.resolve(arg('out', path.join(DIR, BASENAME + '.mp4')));
 
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
 const HIDE_CHROME_CSS = `
@@ -70,8 +70,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -118,7 +116,9 @@ async function renderFrames(context, url, frames) {
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
-  const browser = await chromium.launch();
+  let browser;
+  try {
+  browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
 
   const context = await browser.newContext({
@@ -197,18 +197,16 @@ async function renderFrames(context, url, frames) {
       console.error('  手写非 Stage 动画请改用 render-video.js。');
       console.error('');
     }
-    await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     console.error(msg.slice(0, 500));
-    process.exit(1);
+    throw e;
   }
 
   await browser.close();
+  browser = null;
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
   if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
-    process.exit(1);
+    throw new Error('✗ 没有截到任何帧');
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
 
@@ -227,12 +225,13 @@ async function renderFrames(context, url, frames) {
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    throw new Error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
-
-  fs.rmSync(TMP_DIR, { recursive: true, force: true });
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB · ${FPS}fps native)`);
-})();
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  }
+})().catch(e => { console.error(e && e.message ? e.message : e); process.exit(1); });
