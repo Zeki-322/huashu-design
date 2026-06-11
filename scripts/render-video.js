@@ -8,6 +8,7 @@
  *   NODE_PATH=$(npm root -g) node render-video.js <html-file> \
  *     [--duration=30] [--width=1920] [--height=1080] \
  *     [--trim=<seconds>] [--fontwait=1.5] [--readytimeout=8] \
+ *     [--out=<file.mp4>] \
  *     [--keep-chrome]
  *
  * Design:
@@ -18,8 +19,8 @@
  *      We measure this by waiting for window.__ready (set by animations.jsx
  *      Stage component after first paint), then trim exactly that offset.
  *   3. addInitScript injects CSS hiding "chrome" elements (progress bar,
- *      replay button, masthead, footer, etc.) that are fine for human
- *      debugging but shouldn't appear in exported video.
+ *      replay button, explicit data-record markers, etc.) that are fine for
+ *      human debugging but shouldn't appear in exported video.
  *
  * Animation-ready signal:
  *   Set `window.__ready = true` in your HTML after first paint. This tells
@@ -31,8 +32,8 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
- * convention). Pass --keep-chrome to disable this and see raw HTML.
+ * Chrome elements hidden by default (controls, explicit data-record markers,
+ * and `.no-record`). Pass --keep-chrome to disable this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
  */
@@ -69,7 +70,7 @@ const HTML_ABS = path.resolve(HTML_FILE);
 const BASENAME = path.basename(HTML_FILE, path.extname(HTML_FILE));
 const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.video-tmp-' + Date.now() + '-' + process.pid);
-const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
+const MP4_OUT  = path.resolve(arg('out', path.join(DIR, BASENAME + '.mp4')));
 
 // CSS to hide "chrome" elements during recording.
 // Covers class-name conventions seen across skill-built animations,
@@ -80,8 +81,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -94,7 +93,9 @@ console.log(`  output: ${MP4_OUT}`);
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
-  const browser = await chromium.launch();
+  let browser;
+  try {
+  browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
 
   // ── Phase 1: WARMUP (no recording, caches fonts/assets) ─────────────
@@ -244,11 +245,11 @@ console.log(`  output: ${MP4_OUT}`);
   await page.close();
   await recordCtx.close();
   await browser.close();
+  browser = null;
 
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
-    console.error('✗ No webm produced');
-    process.exit(1);
+    throw new Error('✗ No webm produced');
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
   console.log(`▸ WebM: ${(fs.statSync(webmPath).size / 1024 / 1024).toFixed(1)} MB`);
@@ -278,12 +279,13 @@ console.log(`  output: ${MP4_OUT}`);
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    throw new Error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
-
-  fs.rmSync(TMP_DIR, { recursive: true, force: true });
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB)`);
-})();
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  }
+})().catch(e => { console.error(e && e.message ? e.message : e); process.exit(1); });

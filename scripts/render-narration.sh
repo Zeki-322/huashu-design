@@ -91,7 +91,15 @@ RECORD_DURATION=$(node -e "console.log(Math.ceil($TOTAL_DURATION + 1))")
 HTML_ABS="$(cd "$(dirname "$HTML")" && pwd)/$(basename "$HTML")"
 HTML_DIR="$(dirname "$HTML_ABS")"
 HTML_BASE="$(basename "$HTML" .html)"
-SILENT_MP4="$HTML_DIR/$HTML_BASE.mp4"
+SILENT_TMP_DIR="$(mktemp -d "$HTML_DIR/.video-tmp-narration.XXXXXX")"
+SILENT_MP4="$SILENT_TMP_DIR/$HTML_BASE-silent.mp4"
+
+cleanup_silent_tmp() {
+  if [ -z "$KEEP_SILENT" ] && [ -n "${SILENT_TMP_DIR:-}" ]; then
+    rm -rf "$SILENT_TMP_DIR"
+  fi
+}
+trap cleanup_silent_tmp EXIT
 
 if [ -z "$OUT" ]; then
   OUT="$HTML_DIR/$HTML_BASE-narrated.mp4"
@@ -116,13 +124,15 @@ if [ -n "$USE_SEEK" ]; then
     --duration="$RECORD_DURATION" \
     --fps="$SEEK_FPS" \
     --width="$WIDTH" \
-    --height="$HEIGHT"
+    --height="$HEIGHT" \
+    --out="$SILENT_MP4"
 else
   echo "▸ Step 1/2 · 录制 HTML 动画 (无声)"
   NODE_PATH=$(npm root -g) node "$SCRIPT_DIR/render-video.js" "$HTML_ABS" \
     --duration="$RECORD_DURATION" \
     --width="$WIDTH" \
-    --height="$HEIGHT"
+    --height="$HEIGHT" \
+    --out="$SILENT_MP4"
 fi
 
 if [ ! -f "$SILENT_MP4" ]; then
@@ -140,11 +150,6 @@ MIX_ARGS=("$SILENT_MP4" "--voiceover=$VOICEOVER" "--out=$OUT")
 [ -n "$NO_DUCKING" ] && MIX_ARGS+=("$NO_DUCKING")
 
 bash "$SCRIPT_DIR/mix-voiceover.sh" "${MIX_ARGS[@]}"
-
-# 清理中间产物
-if [ -z "$KEEP_SILENT" ]; then
-  rm -f "$SILENT_MP4"
-fi
 
 echo ""
 echo "✓ 完成: $OUT"
