@@ -94,10 +94,9 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
-      process.exit(1);
-    }
+    console.error(`✗ 不生成 PPTX，避免交付缺页文件。`);
+    await fs.rm(outFile, { force: true }).catch(() => {});
+    process.exit(1);
   }
 
   await pres.writeFile({ fileName: outFile });
