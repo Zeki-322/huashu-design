@@ -70,7 +70,7 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
+  .masthead,
   .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
@@ -208,6 +208,12 @@ async function renderFrames(context, url, frames) {
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
   if (pngCount === 0) {
     console.error('✗ 没有截到任何帧');
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    process.exit(1);
+  }
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 截帧不完整：${pngCount}/${TOTAL_FRAMES}，不编码残缺视频。`);
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +222,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +235,7 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
 
