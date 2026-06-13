@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test:critical-export-safeguards": "node --test scripts/critical-export-safeguards.test.mjs"
+  },
   "dependencies": {
     "pdf-lib": "^1.17.1",
     "playwright": "^1.59.1",
