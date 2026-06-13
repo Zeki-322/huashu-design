@@ -63,6 +63,11 @@ const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
+function cleanupFailedOutput() {
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  fs.rmSync(MP4_OUT, { force: true });
+}
+
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
 const HIDE_CHROME_CSS = `
   .no-record,
@@ -70,7 +75,7 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
+  .masthead,
   .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
@@ -198,16 +203,25 @@ async function renderFrames(context, url, frames) {
       console.error('');
     }
     await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    cleanupFailedOutput();
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
 
   await browser.close();
 
-  const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  const pngFiles = new Set(fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')));
+  const missingFrames = [];
+  for (let f = 0; f < TOTAL_FRAMES; f++) {
+    const name = 'frame-' + String(f).padStart(6, '0') + '.png';
+    if (!pngFiles.has(name)) missingFrames.push(name);
+  }
+  const pngCount = pngFiles.size;
+  if (pngCount !== TOTAL_FRAMES || missingFrames.length) {
+    const sample = missingFrames.slice(0, 8).join(', ');
+    console.error(`✗ 截帧不完整：${pngCount}/${TOTAL_FRAMES} frames`);
+    if (sample) console.error(`  missing: ${sample}${missingFrames.length > 8 ? ' …' : ''}`);
+    cleanupFailedOutput();
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +230,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +243,7 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    cleanupFailedOutput();
     process.exit(1);
   }
 

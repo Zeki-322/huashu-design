@@ -5,6 +5,8 @@
 # Video render temp (render-video.js 产物)
 .video-tmp-*/
 **/.video-tmp-*/
+.seek-tmp-*/
+**/.seek-tmp-*/
 
 # Personal asset index（个人真实数据，只保留 .example.json 模板）
 assets/personal-asset-index.json
