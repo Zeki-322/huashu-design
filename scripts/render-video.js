@@ -80,7 +80,7 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
+  .masthead, .kicker,
   .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
