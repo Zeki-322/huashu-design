@@ -14,7 +14,7 @@
  *
  * 然后在 index.html 的 MANIFEST 给每项加 thumb（与 file 同名 .jpg）：
  *   { file: "slides/01-cover.html", thumb: "thumbs/01-cover.jpg", label: "封面" }
- * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有 thumb 时画廊回退 iframe。
+ * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。若任一页没有 thumb，概览会自动回到 grid。
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
