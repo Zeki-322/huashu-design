@@ -134,6 +134,39 @@ test('export_deck_pptx refuses partial PPTX output', async () => {
   assert.doesNotMatch(src, /errors\.length === files\.length/);
 });
 
+test('export_deck_pptx removes stale output when any slide conversion fails', async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pptx-partial-regression-'));
+  const slidesDir = path.join(tmpDir, 'slides');
+  const out = path.join(tmpDir, 'deck.pptx');
+
+  try {
+    await fs.mkdir(slidesDir, { recursive: true });
+    await fs.writeFile(path.join(slidesDir, '01-ok.html'), `<!doctype html>
+<html><head><style>
+body { margin: 0; width: 1280px; height: 720px; overflow: hidden; font-family: Arial, sans-serif; }
+p { position: absolute; left: 80px; top: 80px; font-size: 28px; }
+</style></head><body><p>Valid slide</p></body></html>`);
+    await fs.writeFile(path.join(slidesDir, '02-overflow.html'), `<!doctype html>
+<html><head><style>
+body { margin: 0; width: 1280px; height: 720px; overflow: visible; font-family: Arial, sans-serif; }
+p { position: absolute; left: 80px; top: 700px; font-size: 80px; }
+</style></head><body><p>This slide overflows and must fail</p></body></html>`);
+    await fs.writeFile(out, 'stale pptx should be removed');
+
+    const result = spawnSync(process.execPath, [
+      path.join(repoRoot, 'scripts/export_deck_pptx.mjs'),
+      '--slides', slidesDir,
+      '--out', out,
+    ], { cwd: repoRoot, encoding: 'utf8' });
+
+    assert.notEqual(result.status, 0, `expected partial export to fail\n${result.stdout}\n${result.stderr}`);
+    assert.match(`${result.stdout}\n${result.stderr}`, /不生成不完整 PPTX/);
+    await assert.rejects(fs.stat(out), { code: 'ENOENT' });
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('mix-voiceover ducking keeps audio audible after the first second', { skip: !commandExists('ffmpeg') || !commandExists('ffprobe') }, async () => {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mix-voiceover-regression-'));
   const video = path.join(tmpDir, 'video.mp4');
