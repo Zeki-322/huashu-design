@@ -83,6 +83,11 @@ console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
 console.log(`  output: ${MP4_OUT}`);
 
+function cleanupOutputs() {
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  fs.rmSync(MP4_OUT, { force: true });
+}
+
 // 在 page 上下文里运行：等 SETTLE 个 rAF（让 React/Babel commit + 布局稳定后再截图）
 async function waitRaf(page, n) {
   await page.evaluate((count) => new Promise(resolve => {
@@ -198,7 +203,7 @@ async function renderFrames(context, url, frames) {
       console.error('');
     }
     await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    cleanupOutputs();
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
@@ -206,8 +211,9 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 截帧不完整：${pngCount}/${TOTAL_FRAMES}`);
+    cleanupOutputs();
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +222,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +235,7 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    cleanupOutputs();
     process.exit(1);
   }
 
