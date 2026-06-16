@@ -80,6 +80,14 @@ if [ -z "$OUTPUT" ]; then
   OUTPUT="${base}-voiced.mp4"
 fi
 
+VIDEO_DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT")"
+if ! awk -v d="$VIDEO_DURATION" 'BEGIN { exit !(d > 0) }'; then
+  echo "✗ 无法读取视频时长: $INPUT" >&2
+  exit 1
+fi
+FADE_DUR="0.5"
+FADE_OUT_START="$(awk -v d="$VIDEO_DURATION" -v f="$FADE_DUR" 'BEGIN { s = d - f; if (s < 0) s = 0; printf "%.3f", s }')"
+
 echo "─ mix-voiceover ──────────────"
 echo "  视频:     $INPUT"
 echo "  人声:     $VOICEOVER (vol=$VOICE_VOLUME)"
@@ -95,7 +103,7 @@ echo "────────────────────────�
 if [ -z "$BGM" ]; then
   # 仅人声
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" \
-    -filter_complex "[1:a]volume=${VOICE_VOLUME}[a]" \
+    -filter_complex "[1:a]volume=${VOICE_VOLUME},apad,atrim=0:${VIDEO_DURATION}[a]" \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
     "$OUTPUT"
@@ -103,10 +111,10 @@ elif [ "$DUCKING" = "1" ]; then
   # 人声 + BGM + sidechain ducking
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
+      [1:a]volume=${VOICE_VOLUME},asplit=2[voice_mix][voice_sc];
       [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm_lo];
-      [bgm_lo][voice]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
-      [voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,afade=t=out:st=0:d=0.5:curve=tri[a]
+      [bgm_lo][voice_sc]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
+      [voice_mix][bgm_ducked]amix=inputs=2:duration=longest:dropout_transition=0,atrim=0:${VIDEO_DURATION},afade=t=out:st=${FADE_OUT_START}:d=${FADE_DUR}:curve=tri[a]
     " \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
@@ -117,7 +125,7 @@ else
     -filter_complex "
       [1:a]volume=${VOICE_VOLUME}[voice];
       [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm];
-      [voice][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]
+      [voice][bgm]amix=inputs=2:duration=longest:dropout_transition=0,atrim=0:${VIDEO_DURATION}[a]
     " \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
