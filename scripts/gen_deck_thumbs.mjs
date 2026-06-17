@@ -22,6 +22,7 @@ import { chromium } from 'playwright';
 import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
 
 const arg = (n, d) => { const i = process.argv.indexOf('--' + n); return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : d; };
 const slidesDir = arg('slides', 'slides');
@@ -39,17 +40,25 @@ if (!files.length) { console.error('slides 目录里没有 .html'); process.exit
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
+const failures = [];
 for (const f of files) {
   const base = f.replace(/\.html$/, '');
   const out = path.join(outDir, base + '.jpg');
   try {
-    await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
+    await page.goto(pathToFileURL(path.resolve(slidesDir, f)).href, { waitUntil: 'load' });
     await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) {
+    failures.push(f);
+    console.error('[FAIL] ' + f + ': ' + e.message);
+  }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
+if (failures.length) {
+  console.error('缩略图生成不完整，失败页面: ' + failures.join(', '));
+  process.exit(1);
+}
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
