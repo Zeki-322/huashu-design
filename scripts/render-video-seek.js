@@ -107,6 +107,7 @@ async function renderFrames(context, url, frames) {
   // 的复位兼容钩子，不能保证逐帧截图确定性。
   await page.waitForFunction(
     () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -196,7 +197,7 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready|__seekRenderReady/.test(msg)) {
+    if (/__seek|__ready|__seekRenderReady|Timeout .*exceeded/.test(msg)) {
       console.error('');
       console.error('✗ 动画没有暴露冻结时钟的 window.__seek（或未就绪）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');

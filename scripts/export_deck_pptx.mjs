@@ -65,7 +65,8 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const args = parseArgs();
+  const { slides, out } = args;
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
