@@ -33,11 +33,26 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs() {
-  const args = {};
+  const args = { allowPartial: false };
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
-    const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+  for (let i = 0; i < a.length; i++) {
+    const token = a[i];
+    if (!token.startsWith('--')) {
+      console.error(`未知参数: ${token}`);
+      process.exit(1);
+    }
+    const k = token.replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
+    const v = a[i + 1];
+    if (!v || v.startsWith('--')) {
+      console.error(`参数 --${k} 缺少值`);
+      process.exit(1);
+    }
+    args[k] = v;
+    i++;
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -94,8 +109,9 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!args.allowPartial) {
+      await fs.rm(outFile, { force: true });
+      console.error(`✗ 默认不生成缺页 PPTX。确认可接受缺页时才加 --allow-partial。`);
       process.exit(1);
     }
   }
