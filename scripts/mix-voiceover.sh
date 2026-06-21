@@ -80,6 +80,13 @@ if [ -z "$OUTPUT" ]; then
   OUTPUT="${base}-voiced.mp4"
 fi
 
+DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT")
+if [ -z "$DURATION" ]; then
+  echo "✗ Could not read video duration" >&2
+  exit 1
+fi
+FADE_OUT_START=$(awk "BEGIN { d = $DURATION - 0.5; if (d < 0) d = 0; print d }")
+
 echo "─ mix-voiceover ──────────────"
 echo "  视频:     $INPUT"
 echo "  人声:     $VOICEOVER (vol=$VOICE_VOLUME)"
@@ -88,6 +95,7 @@ if [ -n "$BGM" ]; then
 else
   echo "  BGM:      （无）"
 fi
+echo "  时长:     ${DURATION}s"
 echo "  输出:     $OUTPUT"
 echo "──────────────────────────────"
 
@@ -95,32 +103,32 @@ echo "────────────────────────�
 if [ -z "$BGM" ]; then
   # 仅人声
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" \
-    -filter_complex "[1:a]volume=${VOICE_VOLUME}[a]" \
+    -filter_complex "[1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION}[a]" \
     -map 0:v -map "[a]" \
-    -c:v copy -c:a aac -b:a 192k -shortest \
+    -c:v copy -c:a aac -b:a 192k -t "$DURATION" \
     "$OUTPUT"
 elif [ "$DUCKING" = "1" ]; then
   # 人声 + BGM + sidechain ducking
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
-      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm_lo];
-      [bgm_lo][voice]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
-      [voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,afade=t=out:st=0:d=0.5:curve=tri[a]
+      [1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION},asplit=2[voice_mix][voice_sc];
+      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9,atrim=0:${DURATION}[bgm_lo];
+      [bgm_lo][voice_sc]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
+      [voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,afade=t=out:st=${FADE_OUT_START}:d=0.5:curve=tri[a]
     " \
     -map 0:v -map "[a]" \
-    -c:v copy -c:a aac -b:a 192k -shortest \
+    -c:v copy -c:a aac -b:a 192k -t "$DURATION" \
     "$OUTPUT"
 else
   # 人声 + BGM 静态混合
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
-      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm];
+      [1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION}[voice];
+      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9,atrim=0:${DURATION}[bgm];
       [voice][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]
     " \
     -map 0:v -map "[a]" \
-    -c:v copy -c:a aac -b:a 192k -shortest \
+    -c:v copy -c:a aac -b:a 192k -t "$DURATION" \
     "$OUTPUT"
 fi
 
