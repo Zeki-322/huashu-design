@@ -14,7 +14,7 @@
  *
  * 然后在 index.html 的 MANIFEST 给每项加 thumb（与 file 同名 .jpg）：
  *   { file: "slides/01-cover.html", thumb: "thumbs/01-cover.jpg", label: "封面" }
- * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有 thumb 时画廊回退 iframe。
+ * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有完整 thumb 时会降级到 grid。
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
@@ -39,6 +39,7 @@ if (!files.length) { console.error('slides 目录里没有 .html'); process.exit
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
+let failed = 0;
 for (const f of files) {
   const base = f.replace(/\.html$/, '');
   const out = path.join(outDir, base + '.jpg');
@@ -48,8 +49,12 @@ for (const f of files) {
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) { failed++; console.error('[FAIL] ' + f + ': ' + e.message); }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
+if (failed > 0) {
+  console.error(`✗ ${failed} 张缩略图生成失败；请修复后再启用 gallery 概览。`);
+  process.exit(1);
+}
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');

@@ -2,10 +2,10 @@
 /**
  * HTML animation → MP4 via Playwright recordVideo + ffmpeg.
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video.js <html-file> \
  *     [--duration=30] [--width=1920] [--height=1080] \
  *     [--trim=<seconds>] [--fontwait=1.5] [--readytimeout=8] \
  *     [--keep-chrome]
@@ -31,8 +31,9 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
- * convention). Pass --keep-chrome to disable this and see raw HTML.
+ * Chrome elements hidden by default (`.no-record`, explicit chrome data
+ * attributes, plus fixed/sticky control bars). Pass --keep-chrome to disable
+ * this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
  */
@@ -53,7 +54,7 @@ function hasFlag(name) {
 const HTML_FILE = process.argv[2];
 if (!HTML_FILE || HTML_FILE.startsWith('--')) {
   console.error('Usage: node render-video.js <html-file>');
-  console.error('Example: NODE_PATH=$(npm root -g) node render-video.js my-animation.html');
+  console.error('Example: NODE_PATH=$(npm root) node render-video.js my-animation.html');
   process.exit(1);
 }
 
@@ -71,17 +72,14 @@ const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.video-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
-// CSS to hide "chrome" elements during recording.
-// Covers class-name conventions seen across skill-built animations,
-// plus a `.no-record` explicit opt-out class.
+// CSS to hide explicit "chrome" elements during recording. Avoid generic
+// content class names like `.title`/`.kicker`; those silently remove real art.
 const HIDE_CHROME_CSS = `
   .no-record,
   .progress, .progress-bar,
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -200,6 +198,7 @@ console.log(`  output: ${MP4_OUT}`);
   let animationStartSec;
   const hasReady = await page.waitForFunction(
     () => window.__ready === true,
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   ).then(() => true).catch(() => false);
 
@@ -279,6 +278,8 @@ console.log(`  output: ${MP4_OUT}`);
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
 

@@ -31,10 +31,10 @@
 
 ### 1. `render-video.js` — HTML → MP4
 
-录一个 25fps 的 MP4 基础版本。依赖全局 playwright。
+录一个 25fps 的 MP4 基础版本。依赖本 skill 的本地 playwright（先在仓库根目录 `npm install`）。
 
 ```bash
-NODE_PATH=$(npm root -g) node /path/to/claude-design/scripts/render-video.js <html文件>
+NODE_PATH=$(npm root) node /path/to/huashu-design/scripts/render-video.js <html文件>
 ```
 
 可选参数：
@@ -114,7 +114,7 @@ bash /path/to/claude-design/scripts/convert-formats.sh <input.mp4> [gif_width] [
 它逐帧 seek 到时间戳截图、再用 ffmpeg 把 PNG 序列编码成 MP4。技术内核借鉴 HeyGen HyperFrames（Apache 2.0）的「冻结时钟 + seek 截图」思路，但不引入任何第三方包——只用本 skill 已有的 playwright + ffmpeg，runtime 中立。
 
 ```bash
-NODE_PATH=$(npm root -g) node /path/to/claude-design/scripts/render-video-seek.js <html文件> --fps=60
+NODE_PATH=$(npm root) node /path/to/huashu-design/scripts/render-video-seek.js <html文件> --fps=60
 ```
 
 参数：`--duration` · `--fps`（默认 60）· `--width` · `--height` · `--concurrency`（默认 4 个 worker 并行）· `--settle`（seek 后等几个 rAF 再截图，默认 2，重 layout 动画可调高）· `--keep-chrome`。输出与 HTML 同目录、同名 `.mp4`。
@@ -140,7 +140,7 @@ cd <项目目录>
 # 假设 $SKILL 指向本 skill 的根目录（自行按安装位置替换）
 
 # 1. 录 25fps 基础 MP4
-NODE_PATH=$(npm root -g) node "$SKILL/scripts/render-video.js" my-animation.html
+NODE_PATH=$(npm --prefix "$SKILL" root) node "$SKILL/scripts/render-video.js" my-animation.html
 
 # 2. 派生 60fps MP4 和 GIF
 bash "$SKILL/scripts/convert-formats.sh" my-animation.mp4
