@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -116,6 +117,67 @@ test('seek renderer fails closed on unsafe or incomplete frame capture', () => {
 
   assert.match(read('assets/animations.jsx'), /window\.__seekRenderReady = true/);
   assert.match(read('assets/narration_stage.jsx'), /window\.__seekRenderReady = true/);
+});
+
+test('seek renderer exports only with the frozen-clock handshake', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'seek-render-regression-'));
+  const script = path.join(ROOT, 'scripts/render-video-seek.js');
+  const env = { ...process.env, NODE_PATH: path.join(ROOT, 'node_modules') };
+  try {
+    const goodHtml = path.join(dir, 'good.html');
+    fs.writeFileSync(goodHtml, `<!doctype html>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; background: #123; color: white; font: 40px sans-serif; }
+  .title { position: absolute; inset: 0; display: grid; place-items: center; }
+</style>
+<div class="title" id="title">VISIBLE TITLE</div>
+<script>
+  window.__ready = true;
+  if (window.__seekRender) {
+    window.__seekRenderReady = true;
+    window.__seek = (t) => { document.getElementById('title').textContent = 'frame ' + t.toFixed(1); };
+  }
+</script>`);
+
+    const good = spawnSync(process.execPath, [
+      script,
+      goodHtml,
+      '--duration=0.4',
+      '--fps=5',
+      '--width=320',
+      '--height=180',
+      '--concurrency=1',
+      '--readytimeout=2',
+    ], { env, encoding: 'utf8' });
+    assert.equal(good.status, 0, good.stdout + good.stderr);
+    assert.match(good.stdout, /Captured 2\/2 frames/);
+    assert.ok(fs.statSync(path.join(dir, 'good.mp4')).size > 0);
+
+    const badHtml = path.join(dir, 'bad.html');
+    fs.writeFileSync(badHtml, `<!doctype html>
+<meta charset="utf-8">
+<body>unsafe seek</body>
+<script>
+  window.__ready = true;
+  window.__seek = () => {};
+</script>`);
+    const bad = spawnSync(process.execPath, [
+      script,
+      badHtml,
+      '--duration=0.4',
+      '--fps=5',
+      '--width=320',
+      '--height=180',
+      '--concurrency=1',
+      '--readytimeout=0.2',
+    ], { env, encoding: 'utf8' });
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.stderr, /__seekRenderReady/);
+    assert.equal(fs.existsSync(path.join(dir, 'bad.mp4')), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('narration and thumbnail helpers fail instead of relying on unsafe fallbacks', () => {
