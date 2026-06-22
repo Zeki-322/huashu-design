@@ -97,11 +97,15 @@ async function renderFrames(context, url, frames) {
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
-  await page.waitForFunction(
-    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
-    null,
-    { timeout: READY_TIMEOUT * 1000 },
-  );
+  try {
+    await page.waitForFunction(
+      () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+      null,
+      { timeout: READY_TIMEOUT * 1000 },
+    );
+  } catch (e) {
+    throw new Error('__seekRenderReady handshake timed out: ' + (e && e.message || e));
+  }
 
   for (const f of frames) {
     const t = f / FPS;
