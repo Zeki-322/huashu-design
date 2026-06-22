@@ -18,10 +18,10 @@
  * window.__seek(t)。纯 CSS @keyframes / Lottie / 非 Stage 驱动的动画不吃 __seek，
  * 这类请继续用 render-video.js。
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video-seek.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video-seek.js <html-file> \
  *     [--duration=30] [--fps=60] [--width=1920] [--height=1080] \
  *     [--concurrency=4] [--settle=2] [--keep-chrome]
  *
@@ -44,7 +44,7 @@ function hasFlag(name) {
 const HTML_FILE = process.argv[2];
 if (!HTML_FILE || HTML_FILE.startsWith('--')) {
   console.error('Usage: node render-video-seek.js <html-file>');
-  console.error('Example: NODE_PATH=$(npm root -g) node render-video-seek.js my-animation.html --fps=60');
+  console.error('Example: NODE_PATH=$(npm root) node render-video-seek.js my-animation.html --fps=60');
   process.exit(1);
 }
 
@@ -64,14 +64,13 @@ const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
+// 只隐藏显式 chrome，避免 `.title`/`.kicker` 等正文类名在成片里被静默移除。
 const HIDE_CHROME_CSS = `
   .no-record,
   .progress, .progress-bar,
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -98,10 +97,15 @@ async function renderFrames(context, url, frames) {
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
-  await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
-    { timeout: READY_TIMEOUT * 1000 },
-  );
+  try {
+    await page.waitForFunction(
+      () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+      null,
+      { timeout: READY_TIMEOUT * 1000 },
+    );
+  } catch (e) {
+    throw new Error('__seekRenderReady handshake timed out: ' + (e && e.message || e));
+  }
 
   for (const f of frames) {
     const t = f / FPS;
@@ -189,9 +193,9 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|__seekRenderReady/.test(msg)) {
       console.error('');
-      console.error('✗ 动画没有暴露 window.__seek（或未就绪）。');
+      console.error('✗ 动画没有暴露可靠的 window.__seekRenderReady / window.__seek（或未就绪）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
       console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
       console.error('  手写非 Stage 动画请改用 render-video.js。');
@@ -199,6 +203,7 @@ async function renderFrames(context, url, frames) {
     }
     await browser.close();
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
@@ -206,8 +211,10 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 帧数不完整: ${pngCount}/${TOTAL_FRAMES}`);
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +223,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +236,8 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
 
