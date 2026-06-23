@@ -197,7 +197,7 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|Timeout/.test(msg)) {
       console.error('');
       console.error('✗ 动画没有完成 seek-render 握手（或未就绪）。');
       console.error('  seek 渲染只支持会在 window.__seekRender 模式下冻结自驱时钟，');
