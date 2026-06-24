@@ -90,6 +90,7 @@ async function main() {
         overflow: visible !important;
       }
       deck-stage > section {
+        box-sizing: border-box !important;
         width: ${W}px !important;
         height: ${H}px !important;
         position: relative !important;
@@ -118,6 +119,7 @@ async function main() {
           overflow: visible !important;
         }
         ::slotted(section) {
+          box-sizing: border-box !important;
           width: ${W}px !important;
           height: ${H}px !important;
           position: relative !important;
