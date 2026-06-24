@@ -15,9 +15,10 @@
  *   3. 结果：PDF 永远只有 1 页（active 那张）
  *
  * 解决方案：
- *   打开 HTML 后，用 page.evaluate 把所有 section 从 deck-stage slot 拔出来，
- *   挂到 body 下一个普通 div，内联 style 强制 position:relative + 固定尺寸，
- *   每个 section 加 page-break-after: always，最后一个改 auto 避免尾部空白页。
+ *   打开 HTML 后，用 page.evaluate 把 deck-stage 的 shadow DOM 临时改成
+ *   只含 <slot> 的打印外壳，并把所有 section 标记为 active。
+ *   这样既绕开 shadow DOM 只显示当前页的规则，又保留 deck-stage > section
+ *   和 section.active 这类单页样式选择器。
  *
  * 依赖：playwright
  *   npm install playwright
@@ -67,45 +68,65 @@ async function main() {
   await page.goto('file://' + htmlAbs, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2500);  // 等 Google Fonts + deck-stage init
 
-  // 核心修复：把 section 从 shadow DOM slot 拔出来摊平
+  // 核心修复：保留 deck-stage > section 父子关系，只替换 shadow DOM 打印外壳
   const sectionCount = await page.evaluate(({ W, H }) => {
     const stage = document.querySelector('deck-stage');
     if (!stage) throw new Error('<deck-stage> not found — 这个脚本只适用于单文件 deck-stage 架构');
     const sections = Array.from(stage.querySelectorAll(':scope > section'));
     if (!sections.length) throw new Error('No <section> found inside <deck-stage>');
+    if (!stage.shadowRoot) throw new Error('<deck-stage> shadowRoot is not open; cannot prepare print export');
 
     // 注入打印样式
     const style = document.createElement('style');
     style.textContent = `
       @page { size: ${W}px ${H}px; margin: 0; }
-      html, body { margin: 0 !important; padding: 0 !important; background: #fff; }
-      deck-stage { display: none !important; }
-    `;
-    document.head.appendChild(style);
-
-    // 摊平到 body 下
-    const container = document.createElement('div');
-    container.id = 'print-container';
-    sections.forEach(s => {
-      // 内联 style 拿到最高优先级；确保 position:relative 让 absolute 子元素正确约束
-      s.style.cssText = `
+      html, body { margin: 0 !important; padding: 0 !important; background: #fff; overflow: visible !important; height: auto !important; }
+      deck-stage {
+        display: block !important;
+        position: static !important;
+        width: ${W}px !important;
+        height: auto !important;
+        background: #fff !important;
+        overflow: visible !important;
+      }
+      deck-stage > section {
         width: ${W}px !important;
         height: ${H}px !important;
-        display: block !important;
         position: relative !important;
         overflow: hidden !important;
         page-break-after: always !important;
         break-after: page !important;
         margin: 0 !important;
-        padding: 0 !important;
-      `;
-      container.appendChild(s);
+      }
+      deck-stage > section:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+    `;
+    document.head.appendChild(style);
+
+    sections.forEach(s => {
+      s.classList.add('active');
     });
-    // 最后一页不分页，避免尾部空白页
-    const last = sections[sections.length - 1];
-    last.style.pageBreakAfter = 'auto';
-    last.style.breakAfter = 'auto';
-    document.body.appendChild(container);
+
+    stage.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block !important;
+          position: static !important;
+          background: #fff !important;
+          overflow: visible !important;
+        }
+        ::slotted(section) {
+          width: ${W}px !important;
+          height: ${H}px !important;
+          position: relative !important;
+          overflow: hidden !important;
+          margin: 0 !important;
+        }
+      </style>
+      <slot></slot>
+    `;
     return sections.length;
   }, { W: width, H: height });
 
