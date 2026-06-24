@@ -76,8 +76,30 @@ fi
 
 # ── 从 timeline.json 读 totalDuration 和 voiceover 路径 ──
 TIMELINE_DIR="$(cd "$(dirname "$TIMELINE")" && pwd)"
-TOTAL_DURATION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$TIMELINE','utf8')).totalDuration)")
-VOICEOVER_REL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$TIMELINE','utf8')).voiceover || 'voiceover.mp3')")
+TOTAL_DURATION=$(node - "$TIMELINE" <<'NODE'
+const fs = require('fs');
+const timelinePath = process.argv[2];
+const data = JSON.parse(fs.readFileSync(timelinePath, 'utf8'));
+const totalDuration = Number(data.totalDuration);
+if (!Number.isFinite(totalDuration) || totalDuration < 0) {
+  console.error('timeline.totalDuration must be a non-negative number');
+  process.exit(1);
+}
+console.log(totalDuration);
+NODE
+)
+VOICEOVER_REL=$(node - "$TIMELINE" <<'NODE'
+const fs = require('fs');
+const timelinePath = process.argv[2];
+const data = JSON.parse(fs.readFileSync(timelinePath, 'utf8'));
+const voiceover = data.voiceover == null ? 'voiceover.mp3' : data.voiceover;
+if (typeof voiceover !== 'string' || voiceover.length === 0) {
+  console.error('timeline.voiceover must be a non-empty string when provided');
+  process.exit(1);
+}
+console.log(voiceover);
+NODE
+)
 VOICEOVER="$TIMELINE_DIR/$VOICEOVER_REL"
 
 if [ ! -f "$VOICEOVER" ]; then
@@ -86,7 +108,15 @@ if [ ! -f "$VOICEOVER" ]; then
 fi
 
 # 录制时长 = 总时长 + 1s 安全缓冲
-RECORD_DURATION=$(node -e "console.log(Math.ceil($TOTAL_DURATION + 1))")
+RECORD_DURATION=$(node - "$TOTAL_DURATION" <<'NODE'
+const totalDuration = Number(process.argv[2]);
+if (!Number.isFinite(totalDuration) || totalDuration < 0) {
+  console.error('timeline.totalDuration must be a non-negative number');
+  process.exit(1);
+}
+console.log(Math.ceil(totalDuration + 1));
+NODE
+)
 
 HTML_ABS="$(cd "$(dirname "$HTML")" && pwd)/$(basename "$HTML")"
 HTML_DIR="$(dirname "$HTML_ABS")"
