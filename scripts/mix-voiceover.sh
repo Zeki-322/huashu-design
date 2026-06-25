@@ -91,11 +91,17 @@ fi
 echo "  输出:     $OUTPUT"
 echo "──────────────────────────────"
 
+DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$INPUT")
+if [ -z "$DURATION" ]; then
+  echo "✗ Could not read video duration" >&2
+  exit 1
+fi
+
 # ── ffmpeg filter graph ─────────────────────────────────────
 if [ -z "$BGM" ]; then
   # 仅人声
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" \
-    -filter_complex "[1:a]volume=${VOICE_VOLUME}[a]" \
+    -filter_complex "[1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION},asetpts=PTS-STARTPTS[a]" \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
     "$OUTPUT"
@@ -103,10 +109,10 @@ elif [ "$DUCKING" = "1" ]; then
   # 人声 + BGM + sidechain ducking
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
-      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm_lo];
-      [bgm_lo][voice]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
-      [voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,afade=t=out:st=0:d=0.5:curve=tri[a]
+      [1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION},asetpts=PTS-STARTPTS,asplit=2[voice_sc][voice_mix];
+      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9,atrim=0:${DURATION},asetpts=PTS-STARTPTS[bgm_lo];
+      [bgm_lo][voice_sc]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
+      [voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0[a]
     " \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
@@ -115,8 +121,8 @@ else
   # 人声 + BGM 静态混合
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
-      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm];
+      [1:a]volume=${VOICE_VOLUME},apad,atrim=0:${DURATION},asetpts=PTS-STARTPTS[voice];
+      [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9,atrim=0:${DURATION},asetpts=PTS-STARTPTS[bgm];
       [voice][bgm]amix=inputs=2:duration=first:dropout_transition=0[a]
     " \
     -map 0:v -map "[a]" \
