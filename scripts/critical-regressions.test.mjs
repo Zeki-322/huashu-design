@@ -91,7 +91,7 @@ test('mix-voiceover ducking keeps audible audio after the opening second', { ski
   assert.equal(mixed.status, 0, mixed.stderr || mixed.stdout);
   assert.equal(fs.existsSync(out), true);
 
-  const probe = spawnSync('ffmpeg', ['-v', 'error', '-ss', '1.2', '-t', '0.5', '-i', out, '-af', 'volumedetect', '-f', 'null', '-'], {
+  const probe = spawnSync('ffmpeg', ['-hide_banner', '-ss', '1.2', '-t', '0.5', '-i', out, '-af', 'volumedetect', '-f', 'null', '-'], {
     encoding: 'utf8',
   });
   assert.equal(probe.status, 0, probe.stderr);
