@@ -122,7 +122,7 @@ test('seek renderer encodes when frozen-clock handshake is present', () => {
   const html = path.join(tmp, 'ready.html');
   write(html, `<!doctype html>
     <body style="margin:0;background:#102030">
-      <div id="box" style="width:80px;height:45px;background:#102030"></div>
+      <div id="box" style="width:80px;height:46px;background:#102030"></div>
       <script>
         if (window.__seekRender) {
           window.__seek = function (t) {
@@ -140,7 +140,7 @@ test('seek renderer encodes when frozen-clock handshake is present', () => {
     '--duration=1',
     '--fps=1',
     '--width=80',
-    '--height=45',
+    '--height=46',
     '--readytimeout=2',
     '--keep-chrome',
   ], {
