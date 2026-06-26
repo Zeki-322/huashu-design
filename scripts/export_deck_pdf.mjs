@@ -3,7 +3,7 @@
  * export_deck_pdf.mjs — 把多文件 slide deck 导出为单个矢量 PDF
  *
  * 用法：
- *   node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--width 1920] [--height 1080]
+ *   node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--index index.html] [--width 1920] [--height 1080]
  *
  * 特点：
  *   - 文字保留矢量（可复制、可搜索）
@@ -17,13 +17,14 @@
  * 依赖：playwright pdf-lib
  *   npm install playwright pdf-lib
  *
- * 会按文件名排序（01-xxx.html → 02-xxx.html → ...）
+ * 默认读取 slides 同级 index.html 的 DECK_MANIFEST，确保页序与浏览器 deck 一致；没有 manifest 时按文件名排序。
  */
 
 import { chromium } from 'playwright';
 import { PDFDocument } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
+import { resolveDeckSlides } from './deck_manifest.mjs';
 
 function parseArgs() {
   const args = { width: 1920, height: 1080 };
@@ -33,7 +34,7 @@ function parseArgs() {
     args[k] = a[i + 1];
   }
   if (!args.slides || !args.out) {
-    console.error('用法: node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--width 1920] [--height 1080]');
+    console.error('用法: node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--index index.html] [--width 1920] [--height 1080]');
     process.exit(1);
   }
   args.width = parseInt(args.width);
@@ -42,13 +43,11 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out, width, height } = parseArgs();
+  const { slides, out, index, width, height } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
-  const files = (await fs.readdir(slidesDir))
-    .filter(f => f.endsWith('.html'))
-    .sort();
+  const files = await resolveDeckSlides(slidesDir, { index });
   if (!files.length) {
     console.error(`No .html files found in ${slidesDir}`);
     process.exit(1);
@@ -60,9 +59,9 @@ async function main() {
 
   // 1) Render each HTML to its own PDF buffer
   const pageBuffers = [];
-  for (const f of files) {
+  for (const slide of files) {
     const page = await ctx.newPage();
-    const url = 'file://' + path.join(slidesDir, f);
+    const url = 'file://' + slide.path;
     await page.goto(url, { waitUntil: 'networkidle' }).catch(() => page.goto(url));
     await page.waitForTimeout(1200);  // web-font paint
     // emulate "screen" so CSS colors/backgrounds render the same as browser
@@ -76,7 +75,7 @@ async function main() {
     });
     pageBuffers.push(buf);
     await page.close();
-    console.log(`  [${pageBuffers.length}/${files.length}] ${f}`);
+    console.log(`  [${pageBuffers.length}/${files.length}] ${slide.file}`);
   }
 
   await browser.close();

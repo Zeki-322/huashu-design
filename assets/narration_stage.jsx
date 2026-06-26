@@ -104,6 +104,8 @@ const NarrationStageLib = (() => {
         // 由外部 window.__seek(t) 逐帧推进。每帧都是确定性 seek，不起 rAF。
         if (typeof window !== 'undefined' && window.__seekRender) {
           window.__seek = (t) => setTime(Math.min(t, timeline.totalDuration));
+          window.__ready = true;
+          window.__seekRenderReady = true;
           return;
         }
         // 录视频模式：rAF wall-clock 自驱动从 0 开始
