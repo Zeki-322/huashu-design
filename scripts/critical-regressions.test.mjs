@@ -117,6 +117,44 @@ test('seek renderer rejects legacy __seek without frozen-clock handshake', () =>
   assert.equal(fs.existsSync(path.join(tmp, 'legacy.mp4')), false);
 });
 
+test('seek renderer encodes when frozen-clock handshake is present', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'seek-ready-'));
+  const html = path.join(tmp, 'ready.html');
+  write(html, `<!doctype html>
+    <body style="margin:0;background:#102030">
+      <div id="box" style="width:80px;height:45px;background:#102030"></div>
+      <script>
+        if (window.__seekRender) {
+          window.__seek = function (t) {
+            document.getElementById('box').style.background = t > 0 ? '#405060' : '#102030';
+          };
+          window.__ready = true;
+          window.__seekRenderReady = true;
+        }
+      </script>
+    </body>`);
+
+  execFileSync(process.execPath, [
+    path.join(ROOT, 'scripts/render-video-seek.js'),
+    html,
+    '--duration=1',
+    '--fps=1',
+    '--width=80',
+    '--height=45',
+    '--readytimeout=2',
+    '--keep-chrome',
+  ], {
+    cwd: ROOT,
+    env: { ...process.env, NODE_PATH: path.join(ROOT, 'node_modules') },
+    stdio: 'pipe',
+    timeout: 20000,
+  });
+
+  const out = path.join(tmp, 'ready.mp4');
+  assert.equal(fs.existsSync(out), true);
+  assert.ok(fs.statSync(out).size > 0);
+});
+
 test('PPTX exporter defaults to fail-closed on partial conversion errors', () => {
   const source = read('scripts/export_deck_pptx.mjs');
   assert.match(source, /--allow-partial/);
