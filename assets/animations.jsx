@@ -195,6 +195,7 @@
       if (typeof window !== 'undefined' && window.__seekRender) {
         window.__ready = true;
         window.__seek = (t) => setTime(Math.min(t, duration - 0.001));
+        window.__seekRenderReady = true;
         return;
       }
       if (!playing) return;
