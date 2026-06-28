@@ -124,7 +124,7 @@ NODE_PATH=$(npm root -g) node /path/to/claude-design/scripts/render-video-seek.j
 - **无开头黑帧**：不录屏，根本没有加载期黑帧，不需要 `--trim` / `--fontwait`
 - **确定性**：seek 到时间戳截图，同输入同输出，不受机器负载/丢帧影响
 
-**适用边界（重要）**：只支持走 Stage 时钟的动画——`assets/animations.jsx` 的 `<Stage>` 或 `narration_stage.jsx` 的 `<NarrationStage>`，它们会响应 `window.__seekRender` 冻结自驱时钟并暴露 `window.__seek(t)`。纯 CSS `@keyframes` / Lottie / 手写非 Stage 动画不吃 `__seek`，这类继续用 `render-video.js`（脚本检测不到 `__seek` 会报错并提示）。
+**适用边界（重要）**：只支持走 Stage 时钟的动画——`assets/animations.jsx` 的 `<Stage>` 或 `narration_stage.jsx` 的 `<NarrationStage>`，它们会响应 `window.__seekRender` 冻结自驱时钟、暴露 `window.__seek(t)`，并设置 `window.__seekRenderReady = true`。纯 CSS `@keyframes` / Lottie / 只手写普通 `__seek` 但没有冻结时钟握手的动画，这类继续用 `render-video.js`（脚本检测不到握手会报错并提示）。
 
 **代价**：逐帧截图，长视频总耗时可能比 recordVideo 实时录更久（靠 `--concurrency` 多 worker 缓解）；大量临时 PNG 占盘，渲染前建议关其他大内存 App。
 
