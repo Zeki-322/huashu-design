@@ -138,11 +138,11 @@
 **踩的坑**：动画 HTML 加了 `.progress` 进度条、`.replay` 重播按钮、`.counter` 时间戳，方便人类调试播放。录成 MP4 交付时这些元素出现在视频底部，像把开发者工具截进去了一样。
 
 **规则**：
-- HTML 里给人类用的「chrome 元素」（progress bar / replay button / footer / masthead / counter / phase labels）和视频内容本体分开管理
+- HTML 里给人类用的「chrome 元素」（progress bar / replay button / counter / phase labels）和视频内容本体分开管理；`footer` / `masthead` / `title` 这类常见内容命名不要默认当 chrome
 - **约定 class 名** `.no-record`：任何带这个 class 的元素，录屏脚本自动隐藏
-- 脚本端（`render-video.js`）默认注入 CSS 隐藏常见 chrome class 名：
+- 脚本端（`render-video.js`）默认注入 CSS 隐藏明确 chrome class / data 标记：
   ```
-  .progress .counter .phases .replay .masthead .footer .no-record [data-role="chrome"]
+  .progress .counter .phases .replay .no-record [data-role="chrome"] [data-record="hidden"]
   ```
 - 用 Playwright 的 `addInitScript` 注入（会在每次 navigate 前生效，reload 也稳）
 - 想看原样 HTML（带 chrome）时加 `--keep-chrome` flag
