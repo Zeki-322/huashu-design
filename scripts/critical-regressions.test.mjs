@@ -41,9 +41,10 @@ function createDeck({ slides = 12, withThumbs = false } = {}) {
   return dir;
 }
 
-async function openDeck(dir) {
+async function openDeck(dir, beforeGoto) {
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  if (beforeGoto) beforeGoto(page);
   await page.goto(pathToFileURL(path.join(dir, 'index.html')).href + '?ov=gallery', { waitUntil: 'load' });
   return { browser, page };
 }
@@ -55,12 +56,11 @@ test('deck_index falls back to grid when gallery thumbnails are missing', async 
   let browser;
 
   try {
-    const opened = await openDeck(dir);
+    const opened = await openDeck(dir, page => page.on('console', msg => {
+      if (msg.type() === 'warning') warnings.push(msg.text());
+    }));
     browser = opened.browser;
     const { page } = opened;
-    page.on('console', msg => {
-      if (msg.type() === 'warning') warnings.push(msg.text());
-    });
 
     await page.waitForFunction(n => document.querySelectorAll('#ov-grid iframe').length === n, slideCount);
     const stats = await page.evaluate(() => ({
