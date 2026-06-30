@@ -534,7 +534,7 @@ Screen 组件接 callback props（`onTabChange`、`onOpen`、`onClose`、`onTogg
 
 | 文件 | 何时用 | 提供 |
 |------|--------|------|
-| `deck_index.html` | **幻灯片的默认基础产物**（不管最终出 PDF 还是 PPTX，HTML 聚合版永远先做） | **直接复制、不要重写其概览逻辑**。自带**两种自适应概览**（打开按秒数随机：网格 iframe 60% / 无限画廊图片 40%）+ 键盘翻页 + scale + 计数器 + 打印合并，每页独立 HTML 免 CSS 串扰，点任意卡片进演示。用法：复制为 `index.html`、编辑 MANIFEST（每项 `{file,label}`；**要用画廊模式则加 `thumb` 字段并先跑 `scripts/gen_deck_thumbs.mjs` 生成缩略图**，否则画廊回退 iframe 会卡）。⚠️ 概览墙已内建解决「任意页数自适应 / 卡片点击命中 / 倾斜不裁切」三个坑——**别自己重写倾斜或网格逻辑**，要改先读 `references/slide-decks.md` 的三条硬约束 |
+| `deck_index.html` | **幻灯片的默认基础产物**（不管最终出 PDF 还是 PPTX，HTML 聚合版永远先做） | **直接复制、不要重写其概览逻辑**。自带**两种自适应概览**（打开按秒数随机：网格 iframe 60% / 无限画廊图片 40%）+ 键盘翻页 + scale + 计数器 + 打印合并，每页独立 HTML 免 CSS 串扰，点任意卡片进演示。用法：复制为 `index.html`、编辑 MANIFEST（每项 `{file,label}`；**要用画廊模式则加 `thumb` 字段并先跑 `scripts/gen_deck_thumbs.mjs` 生成缩略图**；thumb 不齐会自动降级到 grid，绝不在 gallery 里回退 iframe）。⚠️ 概览墙已内建解决「任意页数自适应 / 卡片点击命中 / 倾斜不裁切」三个坑——**别自己重写倾斜或网格逻辑**，要改先读 `references/slide-decks.md` 的三条硬约束 |
 | `scripts/gen_deck_thumbs.mjs` | **给无限画廊概览生成缩略图**（网格 iframe 模式不需要）| playwright 截每页 + sharp 降采样 1600px JPEG：`npm i playwright sharp && node gen_deck_thumbs.mjs --slides slides --out thumbs`，再给 MANIFEST 每项加 `thumb`。分辨率别 <1000px 否则 hover 发虚 |
 | `deck_stage.js` | 做幻灯片（单文件架构，≤10页） | web component：auto-scale + 键盘导航 + slide counter + localStorage + speaker notes ⚠️ **script 必须放在 `</deck-stage>` 之后，section 的 `display: flex` 必须写到 `.active` 上**，详见 `references/slide-decks.md` 的两个硬约束 |
 | `scripts/export_deck_pdf.mjs` | **HTML→PDF 导出（多文件架构）** · 每页独立 HTML 文件，playwright 逐个 `page.pdf()` → pdf-lib 合并。文字保留矢量可搜。依赖 `playwright pdf-lib` |
