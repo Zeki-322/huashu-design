@@ -14,7 +14,7 @@
  *
  * 然后在 index.html 的 MANIFEST 给每项加 thumb（与 file 同名 .jpg）：
  *   { file: "slides/01-cover.html", thumb: "thumbs/01-cover.jpg", label: "封面" }
- * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有 thumb 时画廊回退 iframe。
+ * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。thumb 不完整时画廊会降级为 grid。
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
@@ -52,4 +52,8 @@ for (const f of files) {
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
+if (ok !== files.length) {
+  console.error('✗ 缩略图生成不完整；gallery 需要每一页都有 thumb，已返回失败以避免误交付。');
+  process.exit(1);
+}
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
