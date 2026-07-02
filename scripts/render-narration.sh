@@ -149,4 +149,6 @@ fi
 
 echo ""
 echo "✓ 完成: $OUT"
-[ -n "$KEEP_SILENT" ] && echo "  (中间产物保留: $SILENT_MP4)"
+if [ -n "$KEEP_SILENT" ]; then
+  echo "  (中间产物保留: $SILENT_MP4)"
+fi

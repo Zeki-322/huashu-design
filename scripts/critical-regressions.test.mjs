@@ -123,6 +123,7 @@ test('narration renderer resolves local node_modules before existing NODE_PATH',
   assert.doesNotMatch(source, /npm root -g/);
   assert.match(source, /LOCAL_NODE_PATH="\$\(cd "\$SKILL_ROOT" && npm root\)"/);
   assert.match(source, /NODE_PATH="\$\{LOCAL_NODE_PATH\}\$\{NODE_PATH:\+\:\$NODE_PATH\}"/);
+  assert.match(source, /if \[ -n "\$KEEP_SILENT" \]; then[\s\S]*中间产物保留[\s\S]*fi/);
 });
 
 test('thumbnail generation exits non-zero when any slide fails', () => {
