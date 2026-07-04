@@ -29,15 +29,21 @@ import pptxgen from 'pptxgenjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { listOrderedSlideFiles } from './deck_manifest.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
     args[k] = a[i + 1];
+    i++;
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,13 +56,11 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
-  const files = (await fs.readdir(slidesDir))
-    .filter(f => f.endsWith('.html'))
-    .sort();
+  const files = await listOrderedSlideFiles(slidesDir);
   if (!files.length) {
     console.error(`No .html files found in ${slidesDir}`);
     process.exit(1);
@@ -94,10 +98,14 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      await fs.rm(outFile, { force: true });
+      const reason = errors.length === files.length ? '全部失败' : '默认禁止生成缺页 PPTX';
+      const hint = errors.length === files.length ? '' : '；如确需缺页草稿，请显式传 --allow-partial';
+      console.error(`✗ ${reason}，不生成 PPTX${hint}。`);
       process.exit(1);
     }
+    console.error(`⚠️ 已传 --allow-partial，将生成缺页 PPTX。`);
   }
 
   await pres.writeFile({ fileName: outFile });

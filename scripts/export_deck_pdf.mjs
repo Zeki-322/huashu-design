@@ -24,6 +24,7 @@ import { chromium } from 'playwright';
 import { PDFDocument } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
+import { listOrderedSlideFiles } from './deck_manifest.mjs';
 
 function parseArgs() {
   const args = { width: 1920, height: 1080 };
@@ -46,9 +47,7 @@ async function main() {
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
-  const files = (await fs.readdir(slidesDir))
-    .filter(f => f.endsWith('.html'))
-    .sort();
+  const files = await listOrderedSlideFiles(slidesDir);
   if (!files.length) {
     console.error(`No .html files found in ${slidesDir}`);
     process.exit(1);
