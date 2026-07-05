@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { chromium } from 'playwright';
-
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
 const deckIndexPath = path.join(repoRoot, 'assets', 'deck_index.html');
 const exportPptxPath = path.join(repoRoot, 'scripts', 'export_deck_pptx.mjs');
 
