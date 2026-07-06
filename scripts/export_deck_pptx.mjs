@@ -35,12 +35,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+    } else {
+      args[k] = a[i + 1];
+      i++;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
+    console.error('     默认任一 slide 失败即不写文件；如需缺页 PPTX，显式加 --allow-partial。');
     console.error('');
     console.error('⚠️ HTML 必须符合 4 条硬约束（见 references/editable-pptx.md）。');
     console.error('   视觉自由度优先的场景请改用 export_deck_pdf.mjs 导出 PDF。');
@@ -49,8 +55,16 @@ function parseArgs() {
   return args;
 }
 
+async function removeStaleOutput(outFile) {
+  try {
+    await fs.unlink(outFile);
+  } catch (e) {
+    if (e && e.code !== 'ENOENT') throw e;
+  }
+}
+
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
@@ -94,10 +108,16 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      await removeStaleOutput(outFile);
+      if (errors.length === files.length) {
+        console.error(`✗ 全部失败，不生成 PPTX。`);
+      } else {
+        console.error(`✗ 默认不生成缺页 PPTX；确认可接受缺页时请显式加 --allow-partial。`);
+      }
       process.exit(1);
     }
+    console.error(`⚠️ --allow-partial 已开启，将生成缺少 ${errors.length} 张 slide 的 PPTX。`);
   }
 
   await pres.writeFile({ fileName: outFile });
