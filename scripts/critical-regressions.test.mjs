@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, readFile, rm, writeFile, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile, access } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -173,6 +173,46 @@ window.__seek = function () {};
     assert.notEqual(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stderr, /seek-render 握手|__seekRenderReady/);
     assert.equal(await exists(outFile), false, 'stale MP4 output should be removed on seek-render failure');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('seek renderer succeeds when the frozen-clock handshake is complete', async () => {
+  const dir = await makeTempDir('huashu-seek-success-');
+  try {
+    const html = path.join(dir, 'good-seek.html');
+    const outFile = path.join(dir, 'good-seek.mp4');
+    await writeFile(html, `<!doctype html>
+<html>
+<body style="margin:0;width:64px;height:64px;background:#123;color:#fff">
+<div id="t">0</div>
+<script>
+if (window.__seekRender) {
+  window.__ready = true;
+  window.__seekRenderReady = true;
+  window.__seek = function (t) {
+    document.getElementById('t').textContent = t.toFixed(2);
+    document.body.style.background = t > 0 ? '#345' : '#123';
+  };
+}
+</script>
+</body>
+</html>`);
+
+    const result = runNode([
+      'scripts/render-video-seek.js',
+      html,
+      '--duration=0.2',
+      '--fps=2',
+      '--width=64',
+      '--height=64',
+      '--concurrency=1',
+      '--readytimeout=1',
+    ]);
+
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.ok((await stat(outFile)).size > 0, 'seek renderer should write a non-empty MP4');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
