@@ -75,7 +75,11 @@ const HIDE_CHROME_CSS = `
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+const TOTAL_FRAMES = Math.ceil(FPS * DURATION);
+if (!Number.isFinite(TOTAL_FRAMES) || TOTAL_FRAMES <= 0) {
+  console.error('✗ duration 和 fps 必须生成至少 1 帧');
+  process.exit(1);
+}
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
