@@ -3,7 +3,7 @@
  * export_deck_pptx.mjs — 把多文件 slide deck 导出为可编辑 PPTX
  *
  * 用法：
- *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx>
+ *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]
  *
  * 行为：
  *   - 调用 scripts/html2pptx.js 把 HTML DOM 逐元素翻译成 PowerPoint 原生对象
@@ -35,12 +35,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
-    const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+  for (let i = 0; i < a.length; i++) {
+    const token = a[i];
+    if (!token.startsWith('--')) {
+      console.error(`未知参数: ${token}`);
+      process.exit(1);
+    }
+    const eq = token.indexOf('=');
+    const k = token.slice(2, eq === -1 ? undefined : eq);
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
+    args[k] = eq === -1 ? a[++i] : token.slice(eq + 1);
   }
   if (!args.slides || !args.out) {
-    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
+    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]');
     console.error('');
     console.error('⚠️ HTML 必须符合 4 条硬约束（见 references/editable-pptx.md）。');
     console.error('   视觉自由度优先的场景请改用 export_deck_pdf.mjs 导出 PDF。');
@@ -50,9 +60,10 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -96,6 +107,11 @@ async function main() {
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
     if (errors.length === files.length) {
       console.error(`✗ 全部失败，不生成 PPTX。`);
+      process.exit(1);
+    }
+    if (!allowPartial) {
+      console.error(`✗ PPTX 导出不完整，默认不生成残缺文件。确认可接受缺页时才加 --allow-partial。`);
+      await fs.rm(outFile, { force: true });
       process.exit(1);
     }
   }
