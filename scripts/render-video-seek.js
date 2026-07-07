@@ -18,10 +18,10 @@
  * window.__seek(t)。纯 CSS @keyframes / Lottie / 非 Stage 驱动的动画不吃 __seek，
  * 这类请继续用 render-video.js。
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install` and `NODE_PATH=$(npm root)`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video-seek.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video-seek.js <html-file> \
  *     [--duration=30] [--fps=60] [--width=1920] [--height=1080] \
  *     [--concurrency=4] [--settle=2] [--keep-chrome]
  *
@@ -70,8 +70,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -99,7 +97,8 @@ async function renderFrames(context, url, frames) {
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -117,6 +116,7 @@ async function renderFrames(context, url, frames) {
 
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+  fs.rmSync(MP4_OUT, { force: true });
 
   const browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
@@ -189,16 +189,17 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|Timeout/.test(msg)) {
       console.error('');
-      console.error('✗ 动画没有暴露 window.__seek（或未就绪）。');
-      console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
-      console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
-      console.error('  手写非 Stage 动画请改用 render-video.js。');
+      console.error('✗ 动画没有完成 seek-render 握手（window.__seekRenderReady + window.__seek）。');
+      console.error('  seek 渲染只支持会在 window.__seekRender 下冻结自驱时钟的 Stage 动画');
+      console.error('  （assets/animations.jsx 的 <Stage> 或 narration_stage.jsx 的 <NarrationStage>）。');
+      console.error('  纯 CSS @keyframes / Lottie / 手写非冻结时钟动画请改用 render-video.js。');
       console.error('');
     }
     await browser.close();
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
@@ -206,8 +207,10 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 截帧不完整：${pngCount}/${TOTAL_FRAMES}`);
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +219,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +232,8 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     process.exit(1);
   }
 

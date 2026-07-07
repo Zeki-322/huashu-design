@@ -18,7 +18,7 @@
  *      We measure this by waiting for window.__ready (set by animations.jsx
  *      Stage component after first paint), then trim exactly that offset.
  *   3. addInitScript injects CSS hiding "chrome" elements (progress bar,
- *      replay button, masthead, footer, etc.) that are fine for human
+ *      replay button, fixed control bars, etc.) that are fine for human
  *      debugging but shouldn't appear in exported video.
  *
  * Animation-ready signal:
@@ -31,7 +31,7 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
+ * Chrome elements hidden by default (explicit control class names + `.no-record`
  * convention). Pass --keep-chrome to disable this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
@@ -80,8 +80,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
