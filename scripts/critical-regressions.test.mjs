@@ -147,6 +147,34 @@ test('PPTX export fails closed on a partial slide conversion', async () => {
   }
 });
 
+test('thumbnail generation fails closed and removes stale per-slide output', async () => {
+  const dir = await makeTempDir('huashu-thumbs-fail-');
+  try {
+    const slidesDir = path.join(dir, 'slides');
+    const thumbsDir = path.join(dir, 'thumbs');
+    await mkdir(slidesDir);
+    await mkdir(thumbsDir);
+    await writeFile(path.join(slidesDir, '01-cover.html'), slideHtml('<p>Cover</p>'));
+    const staleThumb = path.join(thumbsDir, '01-cover.jpg');
+    await writeFile(staleThumb, 'stale');
+
+    const result = runNode([
+      'scripts/gen_deck_thumbs.mjs',
+      '--slides', slidesDir,
+      '--out', thumbsDir,
+      '--width', '0',
+      '--canvas-w', '64',
+      '--canvas-h', '64',
+    ]);
+
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /缩略图生成不完整|FAIL/);
+    assert.equal(await exists(staleThumb), false, 'stale thumbnail should be removed on failure');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('seek renderer rejects pages that do not complete the frozen-clock handshake', async () => {
   const dir = await makeTempDir('huashu-seek-handshake-');
   try {
