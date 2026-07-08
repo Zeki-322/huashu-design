@@ -18,10 +18,10 @@
  * window.__seek(t)。纯 CSS @keyframes / Lottie / 非 Stage 驱动的动画不吃 __seek，
  * 这类请继续用 render-video.js。
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video-seek.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video-seek.js <html-file> \
  *     [--duration=30] [--fps=60] [--width=1920] [--height=1080] \
  *     [--concurrency=4] [--settle=2] [--keep-chrome]
  *
@@ -44,7 +44,7 @@ function hasFlag(name) {
 const HTML_FILE = process.argv[2];
 if (!HTML_FILE || HTML_FILE.startsWith('--')) {
   console.error('Usage: node render-video-seek.js <html-file>');
-  console.error('Example: NODE_PATH=$(npm root -g) node render-video-seek.js my-animation.html --fps=60');
+  console.error('Example: NODE_PATH=$(npm root) node render-video-seek.js my-animation.html --fps=60');
   process.exit(1);
 }
 
@@ -63,6 +63,11 @@ const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
+if (!Number.isFinite(DURATION) || DURATION <= 0 || !Number.isFinite(FPS) || FPS <= 0) {
+  console.error('✗ --duration 和 --fps 必须是正数');
+  process.exit(1);
+}
+
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
 const HIDE_CHROME_CSS = `
   .no-record,
@@ -70,14 +75,12 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+const TOTAL_FRAMES = Math.max(1, Math.ceil(FPS * DURATION));
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
@@ -99,7 +102,8 @@ async function renderFrames(context, url, frames) {
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -113,6 +117,17 @@ async function renderFrames(context, url, frames) {
     });
   }
   await page.close();
+}
+
+function removePath(p) {
+  fs.rmSync(p, { recursive: true, force: true });
+}
+
+function fail(message, exitCode = 1) {
+  if (message) console.error(message);
+  removePath(TMP_DIR);
+  removePath(MP4_OUT);
+  process.exit(exitCode);
 }
 
 (async () => {
@@ -189,26 +204,23 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|Timeout/.test(msg)) {
       console.error('');
-      console.error('✗ 动画没有暴露 window.__seek（或未就绪）。');
+      console.error('✗ 动画没有暴露 seek-render 握手（window.__seekRenderReady + window.__seek）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
       console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
       console.error('  手写非 Stage 动画请改用 render-video.js。');
       console.error('');
     }
     await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
-    console.error(msg.slice(0, 500));
-    process.exit(1);
+    fail(msg.slice(0, 500));
   }
 
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
-    process.exit(1);
+  if (pngCount !== TOTAL_FRAMES) {
+    fail(`✗ 截帧不完整：${pngCount}/${TOTAL_FRAMES}。已删除临时帧和可能存在的输出，避免生成短视频。`);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
 
@@ -227,11 +239,10 @@ async function renderFrames(context, url, frames) {
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    fail('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
 
-  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  removePath(TMP_DIR);
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB · ${FPS}fps native)`);
