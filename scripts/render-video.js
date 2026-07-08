@@ -2,10 +2,10 @@
 /**
  * HTML animation → MP4 via Playwright recordVideo + ffmpeg.
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video.js <html-file> \
  *     [--duration=30] [--width=1920] [--height=1080] \
  *     [--trim=<seconds>] [--fontwait=1.5] [--readytimeout=8] \
  *     [--keep-chrome]
@@ -53,7 +53,7 @@ function hasFlag(name) {
 const HTML_FILE = process.argv[2];
 if (!HTML_FILE || HTML_FILE.startsWith('--')) {
   console.error('Usage: node render-video.js <html-file>');
-  console.error('Example: NODE_PATH=$(npm root -g) node render-video.js my-animation.html');
+  console.error('Example: NODE_PATH=$(npm root) node render-video.js my-animation.html');
   process.exit(1);
 }
 
@@ -80,12 +80,21 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
+
+function removePath(p) {
+  fs.rmSync(p, { recursive: true, force: true });
+}
+
+function fail(message, exitCode = 1) {
+  if (message) console.error(message);
+  removePath(TMP_DIR);
+  removePath(MP4_OUT);
+  process.exit(exitCode);
+}
 
 console.log(`▸ Rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · duration: ${DURATION}s · hide-chrome: ${!KEEP_CHROME}`);
@@ -200,6 +209,7 @@ console.log(`  output: ${MP4_OUT}`);
   let animationStartSec;
   const hasReady = await page.waitForFunction(
     () => window.__ready === true,
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   ).then(() => true).catch(() => false);
 
@@ -247,8 +257,7 @@ console.log(`  output: ${MP4_OUT}`);
 
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
-    console.error('✗ No webm produced');
-    process.exit(1);
+    fail('✗ No webm produced');
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
   console.log(`▸ WebM: ${(fs.statSync(webmPath).size / 1024 / 1024).toFixed(1)} MB`);
@@ -278,11 +287,10 @@ console.log(`  output: ${MP4_OUT}`);
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    fail('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
 
-  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  removePath(TMP_DIR);
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB)`);
