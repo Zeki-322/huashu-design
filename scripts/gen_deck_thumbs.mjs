@@ -39,6 +39,7 @@ if (!files.length) { console.error('slides 目录里没有 .html'); process.exit
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
+let failed = 0;
 for (const f of files) {
   const base = f.replace(/\.html$/, '');
   const out = path.join(outDir, base + '.jpg');
@@ -48,8 +49,16 @@ for (const f of files) {
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) {
+    failed++;
+    fs.rmSync(out, { force: true });
+    console.error('[FAIL] ' + f + ': ' + e.message);
+  }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
+if (failed) {
+  console.error(`✗ ${failed} 张缩略图生成失败；已删除对应旧缩略图。`);
+  process.exit(1);
+}
