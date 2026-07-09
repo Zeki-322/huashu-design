@@ -117,9 +117,9 @@ test('PPTX export fails closed on partial slide conversion failure', async () =>
   await fsp.writeFile(path.join(slidesDir, '01-good.html'), `<!doctype html>
 <style>body{width:960pt;height:540pt;overflow:hidden;margin:0}</style>
 <body><div style="position:absolute;left:60pt;top:60pt"><h1 style="font-size:30pt">Good</h1></div></body>`);
-  await fsp.writeFile(path.join(slidesDir, '02-overflow.html'), `<!doctype html>
+  await fsp.writeFile(path.join(slidesDir, '02-bad.html'), `<!doctype html>
 <style>body{width:960pt;height:540pt;overflow:hidden;margin:0}</style>
-<body><div style="position:absolute;left:0;top:0;width:2000pt;height:40pt"><p style="font-size:18pt">Overflow</p></div></body>`);
+<body><p style="font-size:18pt;background:#ff0">Text backgrounds are invalid for editable PPTX</p></body>`);
   await fsp.writeFile(out, 'stale');
 
   const result = run('node', ['scripts/export_deck_pptx.mjs', '--slides', slidesDir, '--out', out]);
