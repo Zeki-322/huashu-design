@@ -35,9 +35,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length;) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    const next = a[i + 1];
+    if (!next || next.startsWith('--')) {
+      args[k] = true;
+      i += 1;
+    } else {
+      args[k] = next;
+      i += 2;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,9 +57,10 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, 'allow-partial': allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -94,13 +102,22 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      console.error(errors.length === files.length
+        ? `✗ 全部失败，不生成 PPTX。`
+        : `✗ 默认不生成部分 PPTX；如确认接受缺页产物，请显式传 --allow-partial。`);
+      await fs.rm(outFile, { force: true });
       process.exit(1);
     }
+    console.error(`⚠️ 已显式允许部分导出 (--allow-partial)，继续写入 ${files.length - errors.length}/${files.length} 页。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
