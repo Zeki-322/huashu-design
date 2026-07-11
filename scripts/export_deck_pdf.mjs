@@ -3,7 +3,7 @@
  * export_deck_pdf.mjs — 把多文件 slide deck 导出为单个矢量 PDF
  *
  * 用法：
- *   node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--width 1920] [--height 1080]
+ *   node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--index index.html] [--width 1920] [--height 1080]
  *
  * 特点：
  *   - 文字保留矢量（可复制、可搜索）
@@ -17,13 +17,15 @@
  * 依赖：playwright pdf-lib
  *   npm install playwright pdf-lib
  *
- * 会按文件名排序（01-xxx.html → 02-xxx.html → ...）
+ * 默认优先读取 slides 同级 index.html 的 DECK_MANIFEST 顺序；找不到 manifest 时才按文件名排序。
  */
 
 import { chromium } from 'playwright';
 import { PDFDocument } from 'pdf-lib';
 import fs from 'fs/promises';
 import path from 'path';
+import { pathToFileURL } from 'url';
+import { resolveDeckEntries } from './deck_manifest.mjs';
 
 function parseArgs() {
   const args = { width: 1920, height: 1080 };
@@ -33,7 +35,7 @@ function parseArgs() {
     args[k] = a[i + 1];
   }
   if (!args.slides || !args.out) {
-    console.error('用法: node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--width 1920] [--height 1080]');
+    console.error('用法: node export_deck_pdf.mjs --slides <dir> --out <file.pdf> [--index index.html] [--width 1920] [--height 1080]');
     process.exit(1);
   }
   args.width = parseInt(args.width);
@@ -42,27 +44,22 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out, width, height } = parseArgs();
+  const { slides, out, index, width, height } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
-  const files = (await fs.readdir(slidesDir))
-    .filter(f => f.endsWith('.html'))
-    .sort();
-  if (!files.length) {
-    console.error(`No .html files found in ${slidesDir}`);
-    process.exit(1);
-  }
-  console.log(`Found ${files.length} slides in ${slidesDir}`);
+  await fs.rm(outFile, { force: true });
+  const entries = await resolveDeckEntries({ slidesDir, indexPath: index });
+  console.log(`Found ${entries.length} slides`);
 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width, height } });
 
   // 1) Render each HTML to its own PDF buffer
   const pageBuffers = [];
-  for (const f of files) {
+  for (const entry of entries) {
     const page = await ctx.newPage();
-    const url = 'file://' + path.join(slidesDir, f);
+    const url = pathToFileURL(entry.absPath).href;
     await page.goto(url, { waitUntil: 'networkidle' }).catch(() => page.goto(url));
     await page.waitForTimeout(1200);  // web-font paint
     // emulate "screen" so CSS colors/backgrounds render the same as browser
@@ -76,7 +73,7 @@ async function main() {
     });
     pageBuffers.push(buf);
     await page.close();
-    console.log(`  [${pageBuffers.length}/${files.length}] ${f}`);
+    console.log(`  [${pageBuffers.length}/${entries.length}] ${entry.displayName}`);
   }
 
   await browser.close();
@@ -92,7 +89,7 @@ async function main() {
   await fs.writeFile(outFile, bytes);
 
   const kb = (bytes.byteLength / 1024).toFixed(0);
-  console.log(`\n✓ Wrote ${outFile}  (${kb} KB, ${files.length} pages, vector)`);
+  console.log(`\n✓ Wrote ${outFile}  (${kb} KB, ${entries.length} pages, vector)`);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
