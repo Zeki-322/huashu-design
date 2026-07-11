@@ -78,7 +78,7 @@ export function parseDeckManifest(source, filename = 'index.html') {
   if (!Array.isArray(manifest)) {
     throw new Error(`DECK_MANIFEST in ${filename} must be an array`);
   }
-  return manifest;
+  return Array.from(manifest, entry => ({ ...entry }));
 }
 
 async function fileExists(file) {

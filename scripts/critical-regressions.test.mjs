@@ -17,7 +17,7 @@ async function makeTempDeck() {
 }
 
 async function writeSlide(file, body = '<p>Slide</p>') {
-  await fs.writeFile(file, `<!doctype html><html><head><meta charset="utf-8"></head><body style="width:960px;height:540px;margin:0">${body}</body></html>`);
+  await fs.writeFile(file, `<!doctype html><html><head><meta charset="utf-8"></head><body style="width:1280px;height:720px;margin:0">${body}</body></html>`);
 }
 
 test('parseDeckManifest accepts the commented object literal used by deck_index.html', () => {
