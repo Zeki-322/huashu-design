@@ -201,7 +201,7 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready|__seekRenderReady/.test(msg)) {
+    if (/Timeout|__seek|__ready|__seekRenderReady/.test(msg)) {
       console.error('');
       console.error('✗ 动画没有暴露 window.__seekRenderReady / window.__seek（或未就绪）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
