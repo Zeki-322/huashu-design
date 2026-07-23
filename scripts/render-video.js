@@ -31,7 +31,7 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
+ * Chrome elements hidden by default (control class names + `.no-record`
  * convention). Pass --keep-chrome to disable this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
@@ -80,8 +80,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
