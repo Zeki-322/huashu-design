@@ -70,14 +70,12 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+const TOTAL_FRAMES = Math.max(1, Math.ceil(FPS * DURATION));
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
@@ -97,9 +95,13 @@ async function renderFrames(context, url, frames) {
   const page = await context.newPage();
   await page.goto(url, { waitUntil: 'load', timeout: 60000 });
 
-  // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
+  // Stage / NarrationStage 在 __seekRender 模式下会显式确认冻结时钟，
+  // 再暴露 window.__seek。仅有 __seek 不足以证明页面不会被 wall-clock rAF 同时推进。
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true &&
+      window.__seekRenderReady === true &&
+      typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -198,6 +200,7 @@ async function renderFrames(context, url, frames) {
       console.error('');
     }
     await browser.close();
+    fs.rmSync(MP4_OUT, { force: true });
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
     console.error(msg.slice(0, 500));
     process.exit(1);
@@ -206,8 +209,10 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    console.error(`✗ 帧数不完整：${pngCount}/${TOTAL_FRAMES}`);
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +221,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -227,6 +233,8 @@ async function renderFrames(context, url, frames) {
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
     process.exit(1);
   }
