@@ -193,8 +193,9 @@
       // self-driven clock and let the external renderer advance each frame via
       // window.__seek(t). No rAF self-drive here — every frame is a deterministic seek.
       if (typeof window !== 'undefined' && window.__seekRender) {
-        window.__ready = true;
         window.__seek = (t) => setTime(Math.min(t, duration - 0.001));
+        window.__seekRenderReady = true;
+        window.__ready = true;
         return;
       }
       if (!playing) return;
