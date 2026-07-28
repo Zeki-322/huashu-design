@@ -34,7 +34,17 @@ def _safe(name):
     return re.sub(r"[^\w\-.]", "_", name)[:60]
 
 
-def fetch(query, out, count, width):
+def _unique_path(out, stem, ext, used):
+    candidate = os.path.join(out, stem + ext)
+    suffix = 2
+    while candidate in used or os.path.exists(candidate):
+        candidate = os.path.join(out, f"{stem}_{suffix}{ext}")
+        suffix += 1
+    used.add(candidate)
+    return candidate
+
+
+def fetch(query, out, count, width, used):
     params = {
         "action": "query", "format": "json", "generator": "search",
         "gsrsearch": query, "gsrnamespace": 6, "gsrlimit": count,
@@ -57,8 +67,8 @@ def fetch(query, out, count, width):
         artist = re.sub("<[^>]+>", "", (meta.get("Artist", {}) or {}).get("value", "?")).strip()
         ext = os.path.splitext(thumb)[1].split("?")[0] or ".jpg"
         fn = _safe(query) + "_" + _safe(p.get("title", "img").replace("File:", ""))
-        fn = os.path.splitext(fn)[0][:55] + ext
-        path = os.path.join(out, fn)
+        stem = os.path.splitext(fn)[0][:55]
+        path = _unique_path(out, stem, ext, used)
         try:
             req = urllib.request.Request(thumb, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=60) as r, open(path, "wb") as f:
@@ -81,8 +91,9 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     allgot = []
+    used = set()
     for q in a.query:
-        allgot += fetch(q, a.out, a.count, a.width)
+        allgot += fetch(q, a.out, a.count, a.width, used)
     print(f"\n=== 共下载 {len(allgot)} 张到 {a.out} ===")
     print("⚠️ 诚实性核对：去掉每张图信息是否有损？许可是否允许用途？不合适的删掉。")
     if not allgot:

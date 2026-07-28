@@ -103,10 +103,10 @@ elif [ "$DUCKING" = "1" ]; then
   # 人声 + BGM + sidechain ducking
   ffmpeg -y -i "$INPUT" -i "$VOICEOVER" -i "$BGM" \
     -filter_complex "
-      [1:a]volume=${VOICE_VOLUME}[voice];
+      [1:a]volume=${VOICE_VOLUME},asplit=2[voice_mix][voice_sc];
       [2:a]volume=${BGM_VOLUME},aloop=loop=-1:size=2e9[bgm_lo];
-      [bgm_lo][voice]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
-      [voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0,afade=t=out:st=0:d=0.5:curve=tri[a]
+      [bgm_lo][voice_sc]sidechaincompress=threshold=0.04:ratio=8:attack=5:release=300:makeup=1[bgm_ducked];
+      [voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0[a]
     " \
     -map 0:v -map "[a]" \
     -c:v copy -c:a aac -b:a 192k -shortest \
