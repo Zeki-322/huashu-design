@@ -3,11 +3,11 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { chromium } from 'playwright';
 
-const root = path.resolve(new URL('..', import.meta.url).pathname, '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const deckIndexPath = path.join(root, 'assets', 'deck_index.html');
 const genThumbsPath = path.join(root, 'scripts', 'gen_deck_thumbs.mjs');
 const fetchImagesPath = path.join(root, 'scripts', 'fetch_images.py');
