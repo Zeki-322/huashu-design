@@ -3,7 +3,7 @@
  * export_deck_pptx.mjs — 把多文件 slide deck 导出为可编辑 PPTX
  *
  * 用法：
- *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx>
+ *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]
  *
  * 行为：
  *   - 调用 scripts/html2pptx.js 把 HTML DOM 逐元素翻译成 PowerPoint 原生对象
@@ -35,12 +35,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
     args[k] = a[i + 1];
+    i++;
   }
   if (!args.slides || !args.out) {
-    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
+    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]');
     console.error('');
     console.error('⚠️ HTML 必须符合 4 条硬约束（见 references/editable-pptx.md）。');
     console.error('   视觉自由度优先的场景请改用 export_deck_pdf.mjs 导出 PDF。');
@@ -50,7 +55,7 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
@@ -94,8 +99,13 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (errors.length === files.length || !allowPartial) {
+      await fs.rm(outFile, { force: true });
+      if (errors.length === files.length) {
+        console.error(`✗ 全部失败，不生成 PPTX。`);
+      } else {
+        console.error(`✗ 默认不生成缺页 PPTX；如确需部分导出，请显式传 --allow-partial。`);
+      }
       process.exit(1);
     }
   }

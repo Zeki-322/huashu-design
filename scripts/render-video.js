@@ -17,8 +17,8 @@
  *      fonts.ready can take 1.5-3s, during which WebM writes black frames.
  *      We measure this by waiting for window.__ready (set by animations.jsx
  *      Stage component after first paint), then trim exactly that offset.
- *   3. addInitScript injects CSS hiding "chrome" elements (progress bar,
- *      replay button, masthead, footer, etc.) that are fine for human
+ *   3. addInitScript injects CSS hiding explicit "chrome" elements (progress bar,
+ *      replay button, data-role markers, etc.) that are fine for human
  *      debugging but shouldn't appear in exported video.
  *
  * Animation-ready signal:
@@ -31,7 +31,7 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
+ * Chrome elements hidden by default (explicit control class names + `.no-record`
  * convention). Pass --keep-chrome to disable this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
@@ -72,16 +72,15 @@ const TMP_DIR  = path.join(DIR, '.video-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
 // CSS to hide "chrome" elements during recording.
-// Covers class-name conventions seen across skill-built animations,
-// plus a `.no-record` explicit opt-out class.
+// Covers control class-name conventions seen across skill-built animations,
+// plus a `.no-record` explicit opt-out class. Avoid broad content names like
+// `.title` or `.footer`; generated demos often use those for the main design.
 const HIDE_CHROME_CSS = `
   .no-record,
   .progress, .progress-bar,
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -200,6 +199,7 @@ console.log(`  output: ${MP4_OUT}`);
   let animationStartSec;
   const hasReady = await page.waitForFunction(
     () => window.__ready === true,
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   ).then(() => true).catch(() => false);
 
