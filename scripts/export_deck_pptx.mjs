@@ -35,9 +35,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    if (!a[i].startsWith('--')) continue;
+    if (i + 1 < a.length && !a[i + 1].startsWith('--')) {
+      args[k] = a[i + 1];
+      i++;
+    } else {
+      args[k] = true;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,9 +56,10 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, 'allow-partial': allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  const tmpOutFile = outFile + '.tmp-' + process.pid + '.pptx';
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -94,13 +101,25 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (errors.length === files.length) console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      await fs.rm(tmpOutFile, { force: true });
+      await fs.rm(outFile, { force: true });
+      console.error(`✗ PPTX 导出失败，已删除旧输出；如确需缺页产物，请显式传 --allow-partial。`);
       process.exit(1);
     }
+    console.error(`⚠️ 已按 --allow-partial 继续生成缺页 PPTX。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  await fs.rm(tmpOutFile, { force: true });
+  try {
+    await pres.writeFile({ fileName: tmpOutFile });
+    await fs.rename(tmpOutFile, outFile);
+  } catch (e) {
+    await fs.rm(tmpOutFile, { force: true });
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
