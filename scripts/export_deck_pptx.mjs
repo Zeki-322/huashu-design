@@ -35,9 +35,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
-    const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+  for (let i = 0; i < a.length; i++) {
+    const raw = a[i];
+    if (!raw.startsWith('--')) continue;
+    const k = raw.replace(/^--/, '');
+    const next = a[i + 1];
+    if (!next || next.startsWith('--')) {
+      args[k] = true;
+    } else {
+      args[k] = next;
+      i++;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,9 +58,10 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, 'allow-partial': allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -94,13 +103,21 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      if (errors.length === files.length) console.error(`✗ 全部失败，不生成 PPTX。`);
+      else console.error(`✗ 默认禁止生成部分成功的 PPTX；如确认需要残缺导出，请显式传 --allow-partial。`);
+      await fs.rm(outFile, { force: true });
       process.exit(1);
     }
+    console.error(`⚠️ 已传 --allow-partial，将生成缺少失败页的 PPTX。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
