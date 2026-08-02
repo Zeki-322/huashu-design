@@ -34,6 +34,16 @@ def _safe(name):
     return re.sub(r"[^\w\-.]", "_", name)[:60]
 
 
+def _unique_path(out, filename):
+    stem, ext = os.path.splitext(filename)
+    path = os.path.join(out, filename)
+    i = 2
+    while os.path.exists(path):
+        path = os.path.join(out, f"{stem}_{i}{ext}")
+        i += 1
+    return path
+
+
 def fetch(query, out, count, width):
     params = {
         "action": "query", "format": "json", "generator": "search",
@@ -58,7 +68,7 @@ def fetch(query, out, count, width):
         ext = os.path.splitext(thumb)[1].split("?")[0] or ".jpg"
         fn = _safe(query) + "_" + _safe(p.get("title", "img").replace("File:", ""))
         fn = os.path.splitext(fn)[0][:55] + ext
-        path = os.path.join(out, fn)
+        path = _unique_path(out, fn)
         try:
             req = urllib.request.Request(thumb, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=60) as r, open(path, "wb") as f:

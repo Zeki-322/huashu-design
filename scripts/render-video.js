@@ -18,7 +18,7 @@
  *      We measure this by waiting for window.__ready (set by animations.jsx
  *      Stage component after first paint), then trim exactly that offset.
  *   3. addInitScript injects CSS hiding "chrome" elements (progress bar,
- *      replay button, masthead, footer, etc.) that are fine for human
+ *      replay button, counters, etc.) that are fine for human
  *      debugging but shouldn't appear in exported video.
  *
  * Animation-ready signal:
@@ -80,8 +80,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -92,6 +90,7 @@ console.log(`  size: ${WIDTH}x${HEIGHT} · duration: ${DURATION}s · hide-chrome
 console.log(`  output: ${MP4_OUT}`);
 
 (async () => {
+  fs.rmSync(MP4_OUT, { force: true });
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
   const browser = await chromium.launch();
@@ -200,6 +199,7 @@ console.log(`  output: ${MP4_OUT}`);
   let animationStartSec;
   const hasReady = await page.waitForFunction(
     () => window.__ready === true,
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   ).then(() => true).catch(() => false);
 
@@ -248,6 +248,8 @@ console.log(`  output: ${MP4_OUT}`);
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
     console.error('✗ No webm produced');
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     process.exit(1);
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
@@ -279,6 +281,8 @@ console.log(`  output: ${MP4_OUT}`);
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    fs.rmSync(MP4_OUT, { force: true });
     process.exit(1);
   }
 
