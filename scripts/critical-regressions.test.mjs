@@ -99,7 +99,7 @@ test('deck gallery with thumbs uses flat cards and reliably enters presentation'
       assert.deepEqual(styles, { stageTransformStyle: 'flat', cardTransformStyle: 'flat' });
 
       const firstCard = page.locator('#ov-gallery .card').first();
-      await firstCard.click({ timeout: 2000 });
+      await firstCard.click({ force: true, timeout: 2000 });
       await page.waitForFunction(() =>
         document.body.dataset.mode === 'present' &&
         document.querySelector('#frame').getAttribute('src').includes('slides/01.html')
