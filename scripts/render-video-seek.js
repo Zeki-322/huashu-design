@@ -194,14 +194,12 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready|__seekRenderReady/.test(msg)) {
-      console.error('');
-      console.error('✗ 动画没有暴露冻结时钟 seek 握手（__seekRenderReady / __seek / __ready）。');
-      console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
-      console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
-      console.error('  手写非 Stage 动画请改用 render-video.js。');
-      console.error('');
-    }
+    console.error('');
+    console.error('✗ 捕获帧失败；请确认页面暴露冻结时钟 seek 握手（__seekRenderReady / __seek / __ready）。');
+    console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
+    console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
+    console.error('  手写非 Stage 动画请改用 render-video.js。');
+    console.error('');
     await browser.close();
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
     fs.rmSync(MP4_OUT, { force: true });
