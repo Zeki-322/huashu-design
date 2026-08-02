@@ -68,6 +68,49 @@ test('deck gallery without complete thumbs falls back to grid and clears overvie
   }
 });
 
+test('deck gallery with thumbs uses flat cards and reliably enters presentation', async () => {
+  await withTempDir(async (dir) => {
+    const slides = path.join(dir, 'slides');
+    const thumbs = path.join(dir, 'thumbs');
+    await fsp.mkdir(slides);
+    await fsp.mkdir(thumbs);
+    await fsp.writeFile(path.join(slides, '01.html'), '<!doctype html><body>one</body>');
+    await fsp.writeFile(path.join(thumbs, '01.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><rect width="160" height="90" fill="#123"/></svg>');
+    const template = await fsp.readFile(path.join(ROOT, 'assets/deck_index.html'), 'utf8');
+    const index = template.replace(
+      /window\.DECK_MANIFEST = \[[\s\S]*?\];/,
+      'window.DECK_MANIFEST = [{ file: "slides/01.html", label: "One", thumb: "thumbs/01.svg" }];',
+    );
+    await fsp.writeFile(path.join(dir, 'index.html'), index);
+
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await page.goto('file://' + path.join(dir, 'index.html') + '?ov=gallery', { waitUntil: 'load' });
+      await page.waitForFunction(() =>
+        document.body.dataset.mode === 'overview' &&
+        document.body.dataset.ov === 'gallery' &&
+        document.querySelectorAll('#ov-gallery .card').length > 0
+      );
+      const styles = await page.evaluate(() => ({
+        stageTransformStyle: getComputedStyle(document.querySelector('.stage3d')).transformStyle,
+        cardTransformStyle: getComputedStyle(document.querySelector('#ov-gallery .card')).transformStyle,
+      }));
+      assert.deepEqual(styles, { stageTransformStyle: 'flat', cardTransformStyle: 'flat' });
+
+      const firstCard = page.locator('#ov-gallery .card').first();
+      await firstCard.click({ timeout: 2000 });
+      await page.waitForFunction(() =>
+        document.body.dataset.mode === 'present' &&
+        document.querySelector('#frame').getAttribute('src').includes('slides/01.html')
+      );
+    } finally {
+      await page.close();
+      await browser.close();
+    }
+  });
+});
+
 test('gen_deck_thumbs fails nonzero and removes stale per-slide output', async () => {
   await withTempDir(async (dir) => {
     const slides = path.join(dir, 'slides');
