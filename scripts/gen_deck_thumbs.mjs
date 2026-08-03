@@ -18,8 +18,6 @@
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
-import { chromium } from 'playwright';
-import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
@@ -38,6 +36,17 @@ const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
 if (!files.length) { console.error('slides 目录里没有 .html'); process.exit(1); }
 const outputFor = (f) => path.join(outDir, f.replace(/\.html$/, '') + '.jpg');
 for (const f of files) fs.rmSync(outputFor(f), { force: true });
+
+let chromium;
+let sharp;
+try {
+  ({ chromium } = await import('playwright'));
+  ({ default: sharp } = await import('sharp'));
+} catch (e) {
+  console.error('加载依赖失败: ' + e.message);
+  console.error('请先运行: npm install playwright sharp');
+  process.exit(1);
+}
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
