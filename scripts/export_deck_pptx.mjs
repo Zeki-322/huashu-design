@@ -25,7 +25,6 @@
  * 按文件名排序（01-xxx.html → 02-xxx.html → ...）。
  */
 
-import pptxgen from 'pptxgenjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -73,6 +72,16 @@ async function main() {
   await removeOutFile();
   console.log(`Converting ${files.length} slides via html2pptx...`);
 
+  let pptxgen;
+  try {
+    ({ default: pptxgen } = await import('pptxgenjs'));
+  } catch (e) {
+    await removeOutFile();
+    console.error(`✗ 加载 pptxgenjs 失败：${e.message}`);
+    console.error(`  依赖缺失时请跑：npm install playwright pptxgenjs sharp`);
+    process.exit(1);
+  }
+
   const { createRequire } = await import('module');
   const require = createRequire(import.meta.url);
   let html2pptx;
@@ -113,7 +122,12 @@ async function main() {
     console.error(`⚠️ 已显式允许部分导出：继续生成缺 ${errors.length} 页的 PPTX。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await removeOutFile();
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
