@@ -18,8 +18,6 @@
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
-import { chromium } from 'playwright';
-import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
@@ -32,24 +30,49 @@ const W = parseInt(arg('canvas-w', '1920'), 10);
 const H = parseInt(arg('canvas-h', '1080'), 10);
 
 if (!fs.existsSync(slidesDir)) { console.error('找不到 slides 目录: ' + slidesDir); process.exit(1); }
+if (!Number.isFinite(width) || width < 1) { console.error('无效 --width: ' + width); process.exit(1); }
 fs.mkdirSync(outDir, { recursive: true });
 const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
 if (!files.length) { console.error('slides 目录里没有 .html'); process.exit(1); }
+const outputFor = (f) => path.join(outDir, f.replace(/\.html$/, '') + '.jpg');
+for (const f of files) fs.rmSync(outputFor(f), { force: true });
+
+let chromium;
+let sharp;
+try {
+  ({ chromium } = await import('playwright'));
+  ({ default: sharp } = await import('sharp'));
+} catch (e) {
+  console.error('加载依赖失败: ' + e.message);
+  console.error('请先运行: npm install playwright sharp');
+  process.exit(1);
+}
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
-for (const f of files) {
-  const base = f.replace(/\.html$/, '');
-  const out = path.join(outDir, base + '.jpg');
-  try {
-    await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
-    await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
-    const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
-    await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
-    ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+let failed = 0;
+try {
+  for (const f of files) {
+    const out = outputFor(f);
+    try {
+      await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
+      await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
+      const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
+      await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
+      ok++; console.log('[ok] ' + out);
+    } catch (e) {
+      failed++;
+      fs.rmSync(out, { force: true });
+      console.error('[FAIL] ' + f + ': ' + e.message);
+    }
+  }
+} finally {
+  await browser.close();
 }
-await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
+if (failed) {
+  console.error(`✗ ${failed} 张缩略图生成失败；已删除失败页的陈旧输出。`);
+  process.exit(1);
+}
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');

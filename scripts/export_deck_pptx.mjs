@@ -25,7 +25,6 @@
  * 按文件名排序（01-xxx.html → 02-xxx.html → ...）。
  */
 
-import pptxgen from 'pptxgenjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -33,14 +32,19 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs() {
-  const args = {};
+  const args = { allowPartial: false };
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
     args[k] = a[i + 1];
+    i++;
   }
   if (!args.slides || !args.out) {
-    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
+    console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]');
     console.error('');
     console.error('⚠️ HTML 必须符合 4 条硬约束（见 references/editable-pptx.md）。');
     console.error('   视觉自由度优先的场景请改用 export_deck_pdf.mjs 导出 PDF。');
@@ -50,9 +54,12 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  const removeOutFile = async () => fs.unlink(outFile).catch(e => {
+    if (e && e.code !== 'ENOENT') throw e;
+  });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -62,7 +69,18 @@ async function main() {
     process.exit(1);
   }
 
+  await removeOutFile();
   console.log(`Converting ${files.length} slides via html2pptx...`);
+
+  let pptxgen;
+  try {
+    ({ default: pptxgen } = await import('pptxgenjs'));
+  } catch (e) {
+    await removeOutFile();
+    console.error(`✗ 加载 pptxgenjs 失败：${e.message}`);
+    console.error(`  依赖缺失时请跑：npm install playwright pptxgenjs sharp`);
+    process.exit(1);
+  }
 
   const { createRequire } = await import('module');
   const require = createRequire(import.meta.url);
@@ -94,13 +112,22 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      await removeOutFile();
+      const reason = errors.length === files.length ? '全部失败' : '部分失败';
+      const hint = errors.length === files.length ? '' : '（如确实需要残缺文件，请显式加 --allow-partial）';
+      console.error(`✗ ${reason}，不生成 PPTX${hint}。`);
       process.exit(1);
     }
+    console.error(`⚠️ 已显式允许部分导出：继续生成缺 ${errors.length} 页的 PPTX。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await removeOutFile();
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
