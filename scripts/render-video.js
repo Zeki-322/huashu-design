@@ -2,10 +2,10 @@
 /**
  * HTML animation → MP4 via Playwright recordVideo + ffmpeg.
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video.js <html-file> \
  *     [--duration=30] [--width=1920] [--height=1080] \
  *     [--trim=<seconds>] [--fontwait=1.5] [--readytimeout=8] \
  *     [--keep-chrome]
@@ -31,7 +31,7 @@
  *   Without __ready, falls back to --fontwait=1.5s (may leave 1-2s of black
  *   at the start). Pass --trim=<seconds> to override manually.
  *
- * Chrome elements hidden by default (all common class names + `.no-record`
+ * Chrome elements hidden by default (explicit chrome markers + `.no-record`
  * convention). Pass --keep-chrome to disable this and see raw HTML.
  *
  * Output: next to the HTML file, same basename with .mp4 suffix.
@@ -72,16 +72,14 @@ const TMP_DIR  = path.join(DIR, '.video-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
 // CSS to hide "chrome" elements during recording.
-// Covers class-name conventions seen across skill-built animations,
-// plus a `.no-record` explicit opt-out class.
+// Covers explicit chrome markers and control-like classes, plus a `.no-record`
+// opt-out class. Avoid generic content names like `.title` and `.footer`.
 const HIDE_CHROME_CSS = `
   .no-record,
   .progress, .progress-bar,
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
