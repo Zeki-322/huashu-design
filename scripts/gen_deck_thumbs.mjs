@@ -31,6 +31,9 @@ const quality = parseInt(arg('quality', '86'), 10);
 const W = parseInt(arg('canvas-w', '1920'), 10);
 const H = parseInt(arg('canvas-h', '1080'), 10);
 
+if (!Number.isFinite(width) || width <= 0) { console.error('无效 --width: ' + arg('width', '1600')); process.exit(1); }
+if (!Number.isFinite(quality) || quality < 1 || quality > 100) { console.error('无效 --quality: ' + arg('quality', '86')); process.exit(1); }
+if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(H) || H <= 0) { console.error('无效画布尺寸'); process.exit(1); }
 if (!fs.existsSync(slidesDir)) { console.error('找不到 slides 目录: ' + slidesDir); process.exit(1); }
 fs.mkdirSync(outDir, { recursive: true });
 const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
@@ -43,13 +46,18 @@ for (const f of files) {
   const base = f.replace(/\.html$/, '');
   const out = path.join(outDir, base + '.jpg');
   try {
+    fs.rmSync(out, { force: true });
     await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
     await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) {
+    fs.rmSync(out, { force: true });
+    console.error('[FAIL] ' + f + ': ' + e.message);
+  }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
+if (ok !== files.length) process.exit(1);

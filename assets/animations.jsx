@@ -194,8 +194,12 @@
       // window.__seek(t). No rAF self-drive here — every frame is a deterministic seek.
       if (typeof window !== 'undefined' && window.__seekRender) {
         window.__ready = true;
+        window.__seekRenderReady = true;
         window.__seek = (t) => setTime(Math.min(t, duration - 0.001));
-        return;
+        return () => {
+          delete window.__seek;
+          delete window.__seekRenderReady;
+        };
       }
       if (!playing) return;
       let cancelled = false;

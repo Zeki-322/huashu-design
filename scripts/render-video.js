@@ -80,8 +80,6 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -93,6 +91,7 @@ console.log(`  output: ${MP4_OUT}`);
 
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+  fs.rmSync(MP4_OUT, { force: true });
 
   const browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
@@ -248,6 +247,8 @@ console.log(`  output: ${MP4_OUT}`);
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
     console.error('✗ No webm produced');
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
@@ -279,6 +280,8 @@ console.log(`  output: ${MP4_OUT}`);
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
 
