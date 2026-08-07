@@ -70,14 +70,21 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+if (!Number.isFinite(DURATION) || DURATION <= 0) {
+  console.error('Invalid --duration: ' + arg('duration', '30'));
+  process.exit(1);
+}
+if (!Number.isFinite(FPS) || FPS <= 0) {
+  console.error('Invalid --fps: ' + arg('fps', '60'));
+  process.exit(1);
+}
+
+const TOTAL_FRAMES = Math.max(1, Math.ceil(FPS * DURATION));
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
@@ -99,7 +106,8 @@ async function renderFrames(context, url, frames) {
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -117,6 +125,7 @@ async function renderFrames(context, url, frames) {
 
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+  fs.rmSync(MP4_OUT, { force: true });
 
   const browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
@@ -189,15 +198,16 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|__seekRenderReady|Timeout/.test(msg)) {
       console.error('');
-      console.error('✗ 动画没有暴露 window.__seek（或未就绪）。');
+      console.error('✗ 动画没有暴露冻结 seek 渲染握手（window.__ready + __seekRenderReady + __seek）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
       console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
       console.error('  手写非 Stage 动画请改用 render-video.js。');
       console.error('');
     }
     await browser.close();
+    fs.rmSync(MP4_OUT, { force: true });
     fs.rmSync(TMP_DIR, { recursive: true, force: true });
     console.error(msg.slice(0, 500));
     process.exit(1);
@@ -206,8 +216,10 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 截图帧数不完整：${pngCount}/${TOTAL_FRAMES}`);
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +228,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +241,8 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    fs.rmSync(MP4_OUT, { force: true });
+    fs.rmSync(TMP_DIR, { recursive: true, force: true });
     process.exit(1);
   }
 

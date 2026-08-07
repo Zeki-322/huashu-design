@@ -35,9 +35,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
-    const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+  for (let i = 0; i < a.length; i++) {
+    const token = a[i];
+    if (!token.startsWith('--')) continue;
+    const eq = token.indexOf('=');
+    if (eq !== -1) {
+      args[token.slice(2, eq)] = token.slice(eq + 1);
+      continue;
+    }
+    const k = token.replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args[k] = true;
+    } else {
+      args[k] = a[++i];
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,9 +61,13 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const args = parseArgs();
+  const { slides, out } = args;
+  const allowPartial = args['allow-partial'] === true;
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -94,10 +109,12 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      console.error(`✗ ${errors.length === files.length ? '全部失败' : '默认禁止部分成功'}，不生成 PPTX。`);
+      await fs.rm(outFile, { force: true });
       process.exit(1);
     }
+    console.error(`  已显式允许 --allow-partial，将继续写出 ${files.length - errors.length}/${files.length} 页。`);
   }
 
   await pres.writeFile({ fileName: outFile });
