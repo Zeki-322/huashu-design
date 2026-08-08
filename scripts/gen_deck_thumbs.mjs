@@ -14,7 +14,7 @@
  *
  * 然后在 index.html 的 MANIFEST 给每项加 thumb（与 file 同名 .jpg）：
  *   { file: "slides/01-cover.html", thumb: "thumbs/01-cover.jpg", label: "封面" }
- * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有 thumb 时画廊回退 iframe。
+ * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有完整 thumb 覆盖时画廊会回退网格。
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
@@ -32,6 +32,9 @@ const W = parseInt(arg('canvas-w', '1920'), 10);
 const H = parseInt(arg('canvas-h', '1080'), 10);
 
 if (!fs.existsSync(slidesDir)) { console.error('找不到 slides 目录: ' + slidesDir); process.exit(1); }
+if (!Number.isFinite(width) || width < 1) { console.error('缩略图宽度必须是正整数: ' + arg('width', '1600')); process.exit(1); }
+if (!Number.isFinite(quality) || quality < 1 || quality > 100) { console.error('JPEG quality 必须在 1-100: ' + arg('quality', '86')); process.exit(1); }
+if (!Number.isFinite(W) || W < 1 || !Number.isFinite(H) || H < 1) { console.error('canvas-w/canvas-h 必须是正整数'); process.exit(1); }
 fs.mkdirSync(outDir, { recursive: true });
 const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
 if (!files.length) { console.error('slides 目录里没有 .html'); process.exit(1); }
@@ -39,17 +42,27 @@ if (!files.length) { console.error('slides 目录里没有 .html'); process.exit
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
+let failed = 0;
 for (const f of files) {
   const base = f.replace(/\.html$/, '');
   const out = path.join(outDir, base + '.jpg');
   try {
+    fs.rmSync(out, { force: true });
     await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
     await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) {
+    failed++;
+    fs.rmSync(out, { force: true });
+    console.error('[FAIL] ' + f + ': ' + e.message);
+  }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
+if (failed) {
+  console.error('✗ 有缩略图生成失败；已删除对应陈旧输出，请修复后重跑。');
+  process.exit(1);
+}
