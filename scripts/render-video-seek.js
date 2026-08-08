@@ -18,10 +18,10 @@
  * window.__seek(t)。纯 CSS @keyframes / Lottie / 非 Stage 驱动的动画不吃 __seek，
  * 这类请继续用 render-video.js。
  *
- * Requires: global playwright (`npm install -g playwright`), ffmpeg on PATH.
+ * Requires: local playwright (`npm install playwright`), ffmpeg on PATH.
  *
  * Usage:
- *   NODE_PATH=$(npm root -g) node render-video-seek.js <html-file> \
+ *   NODE_PATH=$(npm root) node render-video-seek.js <html-file> \
  *     [--duration=30] [--fps=60] [--width=1920] [--height=1080] \
  *     [--concurrency=4] [--settle=2] [--keep-chrome]
  *
@@ -57,11 +57,31 @@ const SETTLE      = Math.max(1, parseInt(arg('settle', '2')));        // seek �
 const READY_TIMEOUT = parseFloat(arg('readytimeout', '8'));
 const KEEP_CHROME = hasFlag('keep-chrome');
 
+if (!Number.isFinite(DURATION) || DURATION <= 0) {
+  console.error('✗ --duration 必须是正数');
+  process.exit(1);
+}
+if (!Number.isFinite(FPS) || FPS <= 0) {
+  console.error('✗ --fps 必须是正数');
+  process.exit(1);
+}
+
 const HTML_ABS = path.resolve(HTML_FILE);
 const BASENAME = path.basename(HTML_FILE, path.extname(HTML_FILE));
 const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
+
+function cleanupFailure() {
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  fs.rmSync(MP4_OUT, { force: true });
+}
+
+function fail(message) {
+  cleanupFailure();
+  console.error(message);
+  process.exit(1);
+}
 
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
 const HIDE_CHROME_CSS = `
@@ -70,14 +90,12 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+const TOTAL_FRAMES = Math.max(1, Math.ceil(FPS * DURATION));
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
@@ -99,7 +117,8 @@ async function renderFrames(context, url, frames) {
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -117,6 +136,7 @@ async function renderFrames(context, url, frames) {
 
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
+  fs.rmSync(MP4_OUT, { force: true });
 
   const browser = await chromium.launch();
   const url = 'file://' + HTML_ABS;
@@ -198,7 +218,7 @@ async function renderFrames(context, url, frames) {
       console.error('');
     }
     await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    cleanupFailure();
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
@@ -206,9 +226,8 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
-    process.exit(1);
+  if (pngCount !== TOTAL_FRAMES) {
+    fail(`✗ 截帧数量不完整：${pngCount}/${TOTAL_FRAMES}`);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
 
@@ -216,6 +235,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -227,12 +247,13 @@ async function renderFrames(context, url, frames) {
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    fail('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
 
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB · ${FPS}fps native)`);
-})();
+})().catch(e => {
+  fail(String(e && e.stack || e));
+});

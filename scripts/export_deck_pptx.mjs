@@ -3,7 +3,7 @@
  * export_deck_pptx.mjs — 把多文件 slide deck 导出为可编辑 PPTX
  *
  * 用法：
- *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx>
+ *   node export_deck_pptx.mjs --slides <dir> --out <file.pptx> [--allow-partial]
  *
  * 行为：
  *   - 调用 scripts/html2pptx.js 把 HTML DOM 逐元素翻译成 PowerPoint 原生对象
@@ -35,9 +35,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    if (k === 'allow-partial') {
+      args[k] = true;
+    } else {
+      args[k] = a[i + 1];
+      i++;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -51,8 +56,10 @@ function parseArgs() {
 
 async function main() {
   const { slides, out } = parseArgs();
+  const allowPartial = process.argv.includes('--allow-partial');
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -96,8 +103,15 @@ async function main() {
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
     if (errors.length === files.length) {
       console.error(`✗ 全部失败，不生成 PPTX。`);
+      await fs.rm(outFile, { force: true });
       process.exit(1);
     }
+    if (!allowPartial) {
+      console.error(`✗ 为避免交付缺页 PPTX，默认不生成部分成功文件。若确实需要部分导出，请显式传 --allow-partial。`);
+      await fs.rm(outFile, { force: true });
+      process.exit(1);
+    }
+    console.error(`⚠️ 已显式允许部分导出，将继续写入 ${files.length - errors.length}/${files.length} 张 slide。`);
   }
 
   await pres.writeFile({ fileName: outFile });
