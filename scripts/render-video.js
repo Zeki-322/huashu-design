@@ -80,18 +80,28 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
+
+function safeRm(target) {
+  try { fs.rmSync(target, { recursive: true, force: true }); } catch (_) {}
+}
+
+function fail(message) {
+  if (message) console.error(message);
+  safeRm(TMP_DIR);
+  safeRm(MP4_OUT);
+  process.exit(1);
+}
 
 console.log(`▸ Rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · duration: ${DURATION}s · hide-chrome: ${!KEEP_CHROME}`);
 console.log(`  output: ${MP4_OUT}`);
 
 (async () => {
+  safeRm(MP4_OUT);
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
   const browser = await chromium.launch();
@@ -200,6 +210,7 @@ console.log(`  output: ${MP4_OUT}`);
   let animationStartSec;
   const hasReady = await page.waitForFunction(
     () => window.__ready === true,
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   ).then(() => true).catch(() => false);
 
@@ -247,8 +258,7 @@ console.log(`  output: ${MP4_OUT}`);
 
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
-    console.error('✗ No webm produced');
-    process.exit(1);
+    fail('✗ No webm produced');
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
   console.log(`▸ WebM: ${(fs.statSync(webmPath).size / 1024 / 1024).toFixed(1)} MB`);
@@ -278,12 +288,11 @@ console.log(`  output: ${MP4_OUT}`);
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    fail('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
 
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB)`);
-})();
+})().catch(e => fail('✗ Render failed:\n' + (e && e.stack || e)));
