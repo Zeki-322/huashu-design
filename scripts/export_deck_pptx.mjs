@@ -35,9 +35,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    if (a[i + 1] && !a[i + 1].startsWith('--')) {
+      args[k] = a[i + 1];
+      i++;
+    } else {
+      args[k] = true;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -51,6 +56,7 @@ function parseArgs() {
 
 async function main() {
   const { slides, out } = parseArgs();
+  const allowPartial = process.argv.includes('--allow-partial');
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
@@ -63,6 +69,7 @@ async function main() {
   }
 
   console.log(`Converting ${files.length} slides via html2pptx...`);
+  await fs.rm(outFile, { force: true });
 
   const { createRequire } = await import('module');
   const require = createRequire(import.meta.url);
@@ -98,9 +105,19 @@ async function main() {
       console.error(`✗ 全部失败，不生成 PPTX。`);
       process.exit(1);
     }
+    if (!allowPartial) {
+      console.error(`✗ 默认不生成部分 PPTX。若明确接受缺页，请加 --allow-partial。`);
+      await fs.rm(outFile, { force: true });
+      process.exit(1);
+    }
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
