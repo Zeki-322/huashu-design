@@ -30,8 +30,32 @@ def _api_get(params):
         return json.load(r)
 
 
+MAX_STEM_LEN = 180
+
+
 def _safe(name):
-    return re.sub(r"[^\w\-.]", "_", name)[:60]
+    cleaned = re.sub(r"[^\w\-.]", "_", name).strip("._")
+    return cleaned or "img"
+
+
+def _image_filename(query, title, ext):
+    title_stem = os.path.splitext(_safe(title.replace("File:", "")))[0] or "img"
+    stem = f"{_safe(query)}_{title_stem}"
+    return stem[:MAX_STEM_LEN] + ext
+
+
+def _unique_path(out, filename):
+    stem, ext = os.path.splitext(filename)
+    path = os.path.join(out, filename)
+    if not os.path.exists(path):
+        return path
+    for i in range(2, 10000):
+        suffix = f"-{i}"
+        candidate_stem = stem[:MAX_STEM_LEN - len(suffix)] + suffix
+        candidate = os.path.join(out, candidate_stem + ext)
+        if not os.path.exists(candidate):
+            return candidate
+    raise RuntimeError(f"Too many filename collisions for {filename}")
 
 
 def fetch(query, out, count, width):
@@ -56,9 +80,10 @@ def fetch(query, out, count, width):
         lic = (meta.get("LicenseShortName", {}) or {}).get("value", "?")
         artist = re.sub("<[^>]+>", "", (meta.get("Artist", {}) or {}).get("value", "?")).strip()
         ext = os.path.splitext(thumb)[1].split("?")[0] or ".jpg"
-        fn = _safe(query) + "_" + _safe(p.get("title", "img").replace("File:", ""))
-        fn = os.path.splitext(fn)[0][:55] + ext
-        path = os.path.join(out, fn)
+        fn = _image_filename(query, p.get("title", "img"), ext)
+        path = _unique_path(out, fn)
+        if os.path.basename(path) != fn:
+            print(f"[WARN rename] {fn} -> {os.path.basename(path)}", file=sys.stderr)
         try:
             req = urllib.request.Request(thumb, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=60) as r, open(path, "wb") as f:
