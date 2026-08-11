@@ -31,13 +31,18 @@ const quality = parseInt(arg('quality', '86'), 10);
 const W = parseInt(arg('canvas-w', '1920'), 10);
 const H = parseInt(arg('canvas-h', '1080'), 10);
 
-if (!Number.isFinite(width) || width <= 0) { console.error('width 必须是正整数'); process.exit(1); }
-if (!Number.isFinite(quality) || quality < 1 || quality > 100) { console.error('quality 必须在 1..100'); process.exit(1); }
-if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(H) || H <= 0) { console.error('canvas-w / canvas-h 必须是正整数'); process.exit(1); }
 if (!fs.existsSync(slidesDir)) { console.error('找不到 slides 目录: ' + slidesDir); process.exit(1); }
 fs.mkdirSync(outDir, { recursive: true });
 const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
 if (!files.length) { console.error('slides 目录里没有 .html'); process.exit(1); }
+
+for (const f of files) {
+  const base = f.replace(/\.html$/, '');
+  fs.rmSync(path.join(outDir, base + '.jpg'), { force: true });
+}
+if (!Number.isFinite(width) || width <= 0) { console.error('width 必须是正整数'); process.exit(1); }
+if (!Number.isFinite(quality) || quality < 1 || quality > 100) { console.error('quality 必须在 1..100'); process.exit(1); }
+if (!Number.isFinite(W) || W <= 0 || !Number.isFinite(H) || H <= 0) { console.error('canvas-w / canvas-h 必须是正整数'); process.exit(1); }
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
