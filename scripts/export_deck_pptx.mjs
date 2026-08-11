@@ -33,11 +33,16 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function parseArgs() {
-  const args = {};
+  const args = { allowPartial: false };
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+      continue;
+    }
     args[k] = a[i + 1];
+    i++;
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,7 +55,7 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
 
@@ -63,6 +68,7 @@ async function main() {
   }
 
   console.log(`Converting ${files.length} slides via html2pptx...`);
+  await fs.rm(outFile, { force: true });
 
   const { createRequire } = await import('module');
   const require = createRequire(import.meta.url);
@@ -94,13 +100,19 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
-    if (errors.length === files.length) {
-      console.error(`✗ 全部失败，不生成 PPTX。`);
+    if (!allowPartial || errors.length === files.length) {
+      await fs.rm(outFile, { force: true });
+      console.error(errors.length === files.length ? `✗ 全部失败，不生成 PPTX。` : `✗ 转换不完整，不生成 PPTX。若确认要导出部分结果，请显式传 --allow-partial。`);
       process.exit(1);
     }
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 

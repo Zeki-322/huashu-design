@@ -71,17 +71,14 @@ const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.video-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
-// CSS to hide "chrome" elements during recording.
-// Covers class-name conventions seen across skill-built animations,
-// plus a `.no-record` explicit opt-out class.
+// CSS to hide recorder chrome during export. Keep this scoped to explicit
+// controls/metadata; common content class names like .title/.footer are valid slide content.
 const HIDE_CHROME_CSS = `
   .no-record,
   .progress, .progress-bar,
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
@@ -90,6 +87,14 @@ const HIDE_CHROME_CSS = `
 console.log(`▸ Rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · duration: ${DURATION}s · hide-chrome: ${!KEEP_CHROME}`);
 console.log(`  output: ${MP4_OUT}`);
+fs.rmSync(MP4_OUT, { force: true });
+
+function fail(message) {
+  fs.rmSync(MP4_OUT, { force: true });
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+  console.error(message);
+  process.exit(1);
+}
 
 (async () => {
   fs.mkdirSync(TMP_DIR, { recursive: true });
@@ -247,8 +252,7 @@ console.log(`  output: ${MP4_OUT}`);
 
   const webmFiles = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.webm'));
   if (webmFiles.length === 0) {
-    console.error('✗ No webm produced');
-    process.exit(1);
+    fail('✗ No webm produced');
   }
   const webmPath = path.join(TMP_DIR, webmFiles[0]);
   console.log(`▸ WebM: ${(fs.statSync(webmPath).size / 1024 / 1024).toFixed(1)} MB`);
@@ -278,8 +282,7 @@ console.log(`  output: ${MP4_OUT}`);
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
 
   if (ffmpeg.status !== 0) {
-    console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
-    process.exit(1);
+    fail('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
   }
 
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
