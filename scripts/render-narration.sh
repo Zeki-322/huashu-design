@@ -33,6 +33,8 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_ROOT="$SCRIPT_DIR/.."
+LOCAL_NODE_PATH="$(cd "$SKILL_ROOT" && npm root)"
+RUN_NODE=(env "NODE_PATH=$LOCAL_NODE_PATH${NODE_PATH:+:$NODE_PATH}" node)
 
 HTML=""
 TIMELINE=""
@@ -112,14 +114,14 @@ echo "════════════════════════�
 echo ""
 if [ -n "$USE_SEEK" ]; then
   echo "▸ Step 1/2 · 逐帧 seek 渲染 HTML 动画 (无声 · ${SEEK_FPS}fps 确定性)"
-  NODE_PATH=$(npm root -g) node "$SCRIPT_DIR/render-video-seek.js" "$HTML_ABS" \
+  "${RUN_NODE[@]}" "$SCRIPT_DIR/render-video-seek.js" "$HTML_ABS" \
     --duration="$RECORD_DURATION" \
     --fps="$SEEK_FPS" \
     --width="$WIDTH" \
     --height="$HEIGHT"
 else
   echo "▸ Step 1/2 · 录制 HTML 动画 (无声)"
-  NODE_PATH=$(npm root -g) node "$SCRIPT_DIR/render-video.js" "$HTML_ABS" \
+  "${RUN_NODE[@]}" "$SCRIPT_DIR/render-video.js" "$HTML_ABS" \
     --duration="$RECORD_DURATION" \
     --width="$WIDTH" \
     --height="$HEIGHT"
@@ -148,4 +150,6 @@ fi
 
 echo ""
 echo "✓ 完成: $OUT"
-[ -n "$KEEP_SILENT" ] && echo "  (中间产物保留: $SILENT_MP4)"
+if [ -n "$KEEP_SILENT" ]; then
+  echo "  (中间产物保留: $SILENT_MP4)"
+fi
