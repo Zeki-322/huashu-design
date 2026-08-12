@@ -63,6 +63,11 @@ const DIR      = path.dirname(HTML_ABS);
 const TMP_DIR  = path.join(DIR, '.seek-tmp-' + Date.now() + '-' + process.pid);
 const MP4_OUT  = path.join(DIR, BASENAME + '.mp4');
 
+function cleanupFailure() {
+  fs.rmSync(MP4_OUT, { force: true });
+  fs.rmSync(TMP_DIR, { recursive: true, force: true });
+}
+
 // 与 render-video.js 完全一致的 chrome 隐藏规则（保证两条链路出片外观一致）
 const HIDE_CHROME_CSS = `
   .no-record,
@@ -70,14 +75,12 @@ const HIDE_CHROME_CSS = `
   .counter, .tCur,
   .phases, .phase-label, .phase,
   .replay, button.replay,
-  .masthead, .kicker, .title,
-  .footer,
   [data-role="chrome"], [data-record="hidden"] {
     display: none !important;
   }
 `;
 
-const TOTAL_FRAMES = Math.round(FPS * DURATION);
+const TOTAL_FRAMES = Math.max(1, Math.ceil(FPS * DURATION));
 
 console.log(`▸ Seek-rendering: ${HTML_FILE}`);
 console.log(`  size: ${WIDTH}x${HEIGHT} · ${FPS}fps · duration: ${DURATION}s · frames: ${TOTAL_FRAMES} · workers: ${CONCURRENCY}`);
@@ -99,7 +102,8 @@ async function renderFrames(context, url, frames) {
 
   // Stage / NarrationStage 在 __seekRender 模式下会暴露 window.__seek 并冻结自驱时钟
   await page.waitForFunction(
-    () => window.__ready === true && typeof window.__seek === 'function',
+    () => window.__ready === true && window.__seekRenderReady === true && typeof window.__seek === 'function',
+    null,
     { timeout: READY_TIMEOUT * 1000 },
   );
 
@@ -116,6 +120,7 @@ async function renderFrames(context, url, frames) {
 }
 
 (async () => {
+  fs.rmSync(MP4_OUT, { force: true });
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
   const browser = await chromium.launch();
@@ -198,7 +203,7 @@ async function renderFrames(context, url, frames) {
       console.error('');
     }
     await browser.close();
-    fs.rmSync(TMP_DIR, { recursive: true, force: true });
+    cleanupFailure();
     console.error(msg.slice(0, 500));
     process.exit(1);
   }
@@ -206,8 +211,9 @@ async function renderFrames(context, url, frames) {
   await browser.close();
 
   const pngCount = fs.readdirSync(TMP_DIR).filter(f => f.endsWith('.png')).length;
-  if (pngCount === 0) {
-    console.error('✗ 没有截到任何帧');
+  if (pngCount !== TOTAL_FRAMES) {
+    console.error(`✗ 帧数不完整：${pngCount}/${TOTAL_FRAMES}`);
+    cleanupFailure();
     process.exit(1);
   }
   console.log(`▸ Captured ${pngCount}/${TOTAL_FRAMES} frames. Encoding H.264…`);
@@ -216,6 +222,7 @@ async function renderFrames(context, url, frames) {
   const ffmpeg = spawnSync('ffmpeg', [
     '-y',
     '-framerate', String(FPS),
+    '-start_number', '0',
     '-i', path.join(TMP_DIR, 'frame-%06d.png'),
     '-c:v', 'libx264',
     '-pix_fmt', 'yuv420p',
@@ -228,6 +235,7 @@ async function renderFrames(context, url, frames) {
 
   if (ffmpeg.status !== 0) {
     console.error('✗ ffmpeg failed:\n' + ffmpeg.stderr.toString().slice(-2000));
+    cleanupFailure();
     process.exit(1);
   }
 
@@ -235,4 +243,8 @@ async function renderFrames(context, url, frames) {
 
   const mp4Size = (fs.statSync(MP4_OUT).size / 1024 / 1024).toFixed(1);
   console.log(`✓ Done: ${MP4_OUT} (${mp4Size} MB · ${FPS}fps native)`);
-})();
+})().catch(e => {
+  cleanupFailure();
+  console.error(e && e.stack ? e.stack : e);
+  process.exit(1);
+});

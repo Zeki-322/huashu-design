@@ -14,12 +14,10 @@
  *
  * 然后在 index.html 的 MANIFEST 给每项加 thumb（与 file 同名 .jpg）：
  *   { file: "slides/01-cover.html", thumb: "thumbs/01-cover.jpg", label: "封面" }
- * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有 thumb 时画廊回退 iframe。
+ * deck_index.html 仅在画廊模式用 thumb；网格模式始终用 file(iframe)。没有完整 thumb 时自动回退 grid。
  *
  * 提示：缩略图分辨率别太低（默认 1600px），否则画廊里卡片 hover 放大后会发虚。
  */
-import { chromium } from 'playwright';
-import sharp from 'sharp';
 import fs from 'fs';
 import path from 'path';
 
@@ -36,20 +34,44 @@ fs.mkdirSync(outDir, { recursive: true });
 const files = fs.readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort();
 if (!files.length) { console.error('slides 目录里没有 .html'); process.exit(1); }
 
+const outputs = files.map(f => path.join(outDir, f.replace(/\.html$/, '') + '.jpg'));
+for (const out of outputs) fs.rmSync(out, { force: true });
+
+if (!Number.isFinite(width) || width < 1) { console.error('width 必须是正整数'); process.exit(1); }
+if (!Number.isFinite(quality) || quality < 1 || quality > 100) { console.error('quality 必须在 1-100 之间'); process.exit(1); }
+if (!Number.isFinite(W) || W < 1 || !Number.isFinite(H) || H < 1) { console.error('canvas-w/canvas-h 必须是正整数'); process.exit(1); }
+
+let chromium;
+let sharp;
+try {
+  ({ chromium } = await import('playwright'));
+  ({ default: sharp } = await import('sharp'));
+} catch (e) {
+  console.error('加载依赖失败，请先运行：npm install playwright sharp');
+  console.error(e.message);
+  process.exit(1);
+}
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 let ok = 0;
-for (const f of files) {
-  const base = f.replace(/\.html$/, '');
-  const out = path.join(outDir, base + '.jpg');
+for (const [idx, f] of files.entries()) {
+  const out = outputs[idx];
   try {
     await page.goto('file://' + path.resolve(slidesDir, f), { waitUntil: 'load' });
     await page.waitForTimeout(2800);                 // 等 webfont / 图片 paint
     const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: W, height: H } });
     await sharp(buf).resize(width).jpeg({ quality }).toFile(out);
     ok++; console.log('[ok] ' + out);
-  } catch (e) { console.error('[FAIL] ' + f + ': ' + e.message); }
+  } catch (e) {
+    fs.rmSync(out, { force: true });
+    console.error('[FAIL] ' + f + ': ' + e.message);
+  }
 }
 await browser.close();
 console.log(`\n=== ${ok}/${files.length} 张缩略图 → ${outDir}/ ===`);
+if (ok !== files.length) {
+  console.error('✗ 缩略图生成不完整，已移除失败页的输出；请修复后重跑。');
+  process.exit(1);
+}
 console.log('在 index.html 的 MANIFEST 每项加 thumb: "' + outDir + '/<同名>.jpg"（仅画廊模式用到）');
