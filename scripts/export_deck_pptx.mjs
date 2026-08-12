@@ -25,7 +25,6 @@
  * 按文件名排序（01-xxx.html → 02-xxx.html → ...）。
  */
 
-import pptxgen from 'pptxgenjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -35,9 +34,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs() {
   const args = {};
   const a = process.argv.slice(2);
-  for (let i = 0; i < a.length; i += 2) {
+  for (let i = 0; i < a.length; i++) {
     const k = a[i].replace(/^--/, '');
-    args[k] = a[i + 1];
+    if (k === 'allow-partial') {
+      args.allowPartial = true;
+    } else {
+      args[k] = a[i + 1];
+      i++;
+    }
   }
   if (!args.slides || !args.out) {
     console.error('用法: node export_deck_pptx.mjs --slides <dir> --out <file.pptx>');
@@ -50,9 +54,11 @@ function parseArgs() {
 }
 
 async function main() {
-  const { slides, out } = parseArgs();
+  const { slides, out, allowPartial } = parseArgs();
   const slidesDir = path.resolve(slides);
   const outFile = path.resolve(out);
+
+  await fs.rm(outFile, { force: true });
 
   const files = (await fs.readdir(slidesDir))
     .filter(f => f.endsWith('.html'))
@@ -66,11 +72,13 @@ async function main() {
 
   const { createRequire } = await import('module');
   const require = createRequire(import.meta.url);
+  let pptxgen;
   let html2pptx;
   try {
+    ({ default: pptxgen } = await import('pptxgenjs'));
     html2pptx = require(path.join(__dirname, 'html2pptx.js'));
   } catch (e) {
-    console.error(`✗ 加载 html2pptx.js 失败：${e.message}`);
+    console.error(`✗ 加载导出依赖失败：${e.message}`);
     console.error(`  依赖缺失时请跑：npm install playwright pptxgenjs sharp`);
     process.exit(1);
   }
@@ -94,13 +102,25 @@ async function main() {
   if (errors.length) {
     console.error(`\n⚠️ ${errors.length} 张 slide 转换失败。常见原因：HTML 不符合 4 条硬约束。`);
     console.error(`  详见 references/editable-pptx.md 的「常见错误速查」。`);
+    if (!allowPartial) {
+      await fs.rm(outFile, { force: true });
+      console.error(`✗ 默认不生成残缺 PPTX；如确实要部分导出，请显式传 --allow-partial。`);
+      process.exit(1);
+    }
     if (errors.length === files.length) {
+      await fs.rm(outFile, { force: true });
       console.error(`✗ 全部失败，不生成 PPTX。`);
       process.exit(1);
     }
+    console.error(`⚠️ 已按 --allow-partial 继续生成部分 PPTX。`);
   }
 
-  await pres.writeFile({ fileName: outFile });
+  try {
+    await pres.writeFile({ fileName: outFile });
+  } catch (e) {
+    await fs.rm(outFile, { force: true });
+    throw e;
+  }
   console.log(`\n✓ Wrote ${outFile}  (${files.length - errors.length}/${files.length} slides, 可编辑 PPTX)`);
 }
 
