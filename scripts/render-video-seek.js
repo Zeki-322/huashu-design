@@ -194,9 +194,9 @@ async function renderFrames(context, url, frames) {
     await Promise.all(buckets.map(b => b.length ? renderFrames(context, url, b) : Promise.resolve()));
   } catch (e) {
     const msg = String(e && e.message || e);
-    if (/__seek|__ready/.test(msg)) {
+    if (/__seek|__ready|Timeout/i.test(msg)) {
       console.error('');
-      console.error('✗ 动画没有暴露 window.__seek（或未就绪）。');
+      console.error('✗ 动画没有完成 seek 渲染握手（需要 window.__ready、window.__seekRenderReady 和 window.__seek）。');
       console.error('  seek 渲染只支持走 Stage 时钟的动画（assets/animations.jsx 的 <Stage>');
       console.error('  或 narration_stage.jsx 的 <NarrationStage>）。纯 CSS @keyframes / Lottie /');
       console.error('  手写非 Stage 动画请改用 render-video.js。');
