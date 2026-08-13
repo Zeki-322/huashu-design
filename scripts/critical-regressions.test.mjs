@@ -98,6 +98,18 @@ test('html2pptx rejects high-risk image formats before pptxgenjs parses them', a
       () => html2pptx(slidePath, pres),
       /unsupported image format "\.jxl"/,
     );
+
+    fs.writeFileSync(path.join(tmp, 'payload.png'), Buffer.from('00000018667479706865696300000000', 'hex'));
+    fs.writeFileSync(slidePath, `<!doctype html>
+      <html><body style="width:1280px;height:720px;margin:0">
+        <img src="payload.png" style="position:absolute;left:10px;top:10px;width:100px;height:80px">
+      </body></html>`);
+    const presWithSpoofedImage = new pptxgen();
+    presWithSpoofedImage.layout = 'LAYOUT_WIDE';
+    await assert.rejects(
+      () => html2pptx(slidePath, presWithSpoofedImage),
+      /image bytes do not match "\.png"/,
+    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

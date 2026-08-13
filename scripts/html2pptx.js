@@ -26,6 +26,7 @@
  */
 
 const { chromium } = require('playwright');
+const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 
@@ -33,20 +34,70 @@ const PT_PER_PX = 0.75;
 const PX_PER_IN = 96;
 const EMU_PER_IN = 914400;
 const SAFE_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']);
-const SAFE_IMAGE_DATA_URI = /^data:image\/(?:png|jpeg|jpg|gif|svg\+xml|webp);/i;
+const SAFE_IMAGE_DATA_URI = /^data:image\/(?:png|jpeg|jpg|gif|svg\+xml|webp)(?:;[^,]*)?,/i;
 
 function normalizeImagePath(src) {
   return src.startsWith('file://') ? src.replace('file://', '') : src;
 }
 
+function sniffImageType(buffer) {
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png';
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
+  if (buffer.length >= 6 && (buffer.subarray(0, 6).toString('ascii') === 'GIF87a' || buffer.subarray(0, 6).toString('ascii') === 'GIF89a')) return 'gif';
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') return 'webp';
+
+  const prefix = buffer.subarray(0, 512).toString('utf8').trimStart().toLowerCase();
+  if (prefix.startsWith('<svg') || (prefix.startsWith('<?xml') && prefix.includes('<svg'))) return 'svg';
+  return null;
+}
+
+function expectedTypeForExtension(ext) {
+  if (ext === '.jpg' || ext === '.jpeg') return 'jpg';
+  return ext.slice(1);
+}
+
+function validateImageBytes(buffer, ext, context) {
+  const actual = sniffImageType(buffer);
+  const expected = expectedTypeForExtension(ext);
+  if (actual !== expected) {
+    throw new Error(
+      `${context} image bytes do not match "${ext}" (${actual || 'unknown'} detected). ` +
+      'Use PNG, JPEG, GIF, SVG, or WebP before exporting to PPTX.'
+    );
+  }
+}
+
 function assertSafeImageSource(src, context) {
-  if (SAFE_IMAGE_DATA_URI.test(src)) return;
+  if (src.startsWith('data:')) {
+    if (!SAFE_IMAGE_DATA_URI.test(src)) {
+      throw new Error(`${context} uses unsupported data URI image format.`);
+    }
+    const metaEnd = src.indexOf(',');
+    const meta = src.slice(0, metaEnd).toLowerCase();
+    const payload = src.slice(metaEnd + 1);
+    const ext = meta.includes('image/svg+xml')
+      ? '.svg'
+      : '.' + meta.match(/^data:image\/([^;]+)/)[1].replace('jpeg', 'jpg');
+    const buffer = meta.includes(';base64')
+      ? Buffer.from(payload, 'base64')
+      : Buffer.from(decodeURIComponent(payload), 'utf8');
+    validateImageBytes(buffer, ext, context);
+    return;
+  }
 
   let pathname = src;
+  let isFileUrl = false;
   try {
     const url = new URL(src);
+    if (url.protocol !== 'file:') {
+      throw new Error(
+        `${context} uses a remote image URL. Download it locally as PNG, JPEG, GIF, SVG, or WebP before exporting to PPTX.`
+      );
+    }
     pathname = url.pathname;
-  } catch (_) {
+    isFileUrl = true;
+  } catch (e) {
+    if (e.message && e.message.includes('remote image URL')) throw e;
     // Plain filesystem path.
   }
 
@@ -57,6 +108,9 @@ function assertSafeImageSource(src, context) {
       'Use PNG, JPEG, GIF, SVG, or WebP before exporting to PPTX.'
     );
   }
+
+  const filePath = isFileUrl ? decodeURIComponent(pathname) : pathname;
+  validateImageBytes(fs.readFileSync(filePath), ext, context);
 }
 
 // Helper: Get body dimensions and check for overflow
