@@ -103,6 +103,8 @@ const NarrationStageLib = (() => {
         // Seek-render（render-video-seek.js 注入 window.__seekRender）：冻结自驱时钟，
         // 由外部 window.__seek(t) 逐帧推进。每帧都是确定性 seek，不起 rAF。
         if (typeof window !== 'undefined' && window.__seekRender) {
+          window.__ready = true;
+          window.__seekRenderReady = true;
           window.__seek = (t) => setTime(Math.min(t, timeline.totalDuration));
           return;
         }
