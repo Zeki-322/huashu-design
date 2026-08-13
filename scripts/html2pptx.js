@@ -32,6 +32,32 @@ const sharp = require('sharp');
 const PT_PER_PX = 0.75;
 const PX_PER_IN = 96;
 const EMU_PER_IN = 914400;
+const SAFE_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp']);
+const SAFE_IMAGE_DATA_URI = /^data:image\/(?:png|jpeg|jpg|gif|svg\+xml|webp);/i;
+
+function normalizeImagePath(src) {
+  return src.startsWith('file://') ? src.replace('file://', '') : src;
+}
+
+function assertSafeImageSource(src, context) {
+  if (SAFE_IMAGE_DATA_URI.test(src)) return;
+
+  let pathname = src;
+  try {
+    const url = new URL(src);
+    pathname = url.pathname;
+  } catch (_) {
+    // Plain filesystem path.
+  }
+
+  const ext = path.extname(pathname).toLowerCase();
+  if (!SAFE_IMAGE_EXTENSIONS.has(ext)) {
+    throw new Error(
+      `${context} uses unsupported image format "${ext || 'unknown'}". ` +
+      'Use PNG, JPEG, GIF, SVG, or WebP before exporting to PPTX.'
+    );
+  }
+}
 
 // Helper: Get body dimensions and check for overflow
 async function getBodyDimensions(page) {
@@ -120,9 +146,8 @@ function validateTextBoxPosition(slideData, bodyDimensions) {
 // Helper: Add background to slide
 async function addBackground(slideData, targetSlide, tmpDir) {
   if (slideData.background.type === 'image' && slideData.background.path) {
-    let imagePath = slideData.background.path.startsWith('file://')
-      ? slideData.background.path.replace('file://', '')
-      : slideData.background.path;
+    assertSafeImageSource(slideData.background.path, 'Slide background');
+    let imagePath = normalizeImagePath(slideData.background.path);
     targetSlide.background = { path: imagePath };
   } else if (slideData.background.type === 'color' && slideData.background.value) {
     targetSlide.background = { color: slideData.background.value };
@@ -133,7 +158,8 @@ async function addBackground(slideData, targetSlide, tmpDir) {
 function addElements(slideData, targetSlide, pres) {
   for (const el of slideData.elements) {
     if (el.type === 'image') {
-      let imagePath = el.src.startsWith('file://') ? el.src.replace('file://', '') : el.src;
+      assertSafeImageSource(el.src, 'Image element');
+      let imagePath = normalizeImagePath(el.src);
       targetSlide.addImage({
         path: imagePath,
         x: el.position.x,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import { chromium } from 'playwright';
 
 const root = path.resolve(import.meta.dirname, '..');
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');
+const require = createRequire(import.meta.url);
 
 test('deck overview falls back to grid when gallery thumbs are incomplete', async () => {
   const browser = await chromium.launch();
@@ -79,6 +81,28 @@ test('PPTX export fails closed on partial slide conversion unless explicitly all
   assert.match(src, /await fs\.rm\(outFile, \{ force: true \}\)/);
 });
 
+test('html2pptx rejects high-risk image formats before pptxgenjs parses them', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'html2pptx-image-'));
+  try {
+    const slidePath = path.join(tmp, 'slide.html');
+    fs.writeFileSync(slidePath, `<!doctype html>
+      <html><body style="width:960px;height:540px;margin:0">
+        <img src="payload.jxl" style="position:absolute;left:10px;top:10px;width:100px;height:80px">
+      </body></html>`);
+
+    const pptxgen = require('pptxgenjs');
+    const html2pptx = require(path.join(root, 'scripts/html2pptx.js'));
+    const pres = new pptxgen();
+    pres.layout = 'LAYOUT_WIDE';
+    await assert.rejects(
+      () => html2pptx(slidePath, pres),
+      /unsupported image format "\.jxl"/,
+    );
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('voiceover and narration wrappers keep successful exports audible and successful', () => {
   const mix = read('scripts/mix-voiceover.sh');
   assert.match(mix, /asplit=2\[voice_sc\]\[voice_mix\]/);
@@ -97,6 +121,7 @@ test('modified scripts pass syntax checks', () => {
     execFileSync(process.execPath, ['--check', path.join(root, file)], { stdio: 'pipe' });
   }
   for (const file of [
+    'scripts/html2pptx.js',
     'scripts/render-video.js',
     'scripts/render-video-seek.js',
   ]) {
