@@ -86,7 +86,7 @@ test('html2pptx rejects high-risk image formats before pptxgenjs parses them', a
   try {
     const slidePath = path.join(tmp, 'slide.html');
     fs.writeFileSync(slidePath, `<!doctype html>
-      <html><body style="width:960px;height:540px;margin:0">
+      <html><body style="width:1280px;height:720px;margin:0">
         <img src="payload.jxl" style="position:absolute;left:10px;top:10px;width:100px;height:80px">
       </body></html>`);
 
